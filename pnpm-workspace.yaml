@@ -1,0 +1,8 @@
+# Declares this directory as its own pnpm root.
+#
+# Not optional here: there is a pnpm-workspace.yaml in the user's home
+# directory, and pnpm walks up until it finds one. Without this file pnpm
+# resolves the root to $HOME, decides this package is not a workspace member,
+# and reports "Already up to date" while installing nothing at all.
+packages:
+  - .
