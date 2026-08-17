@@ -1,10 +1,13 @@
-import { useRef } from 'react'
-
-/* Marca, navegacion, riel del ciclo y pista de interaccion.
+/* Marca, navegacion y riel del ciclo.
  *
  * Van juntos porque comparten una sola cosa: el esquema claro/oscuro, que sale
  * de la etapa en la que esta la pieza. Antes eso era un `classList.toggle`
- * sobre cinco nodos buscados por id; aca es un prop. */
+ * sobre cinco nodos buscados por id; aca es un prop.
+ *
+ * Aca vivia tambien `Cue`, el cartel que pedia mover el mouse para elegir una
+ * fruta. Se fue con la eleccion: la pieza ahora corre sola de punta a punta y
+ * un cartel que invita a hacer algo que no hace nada es peor que ningun
+ * cartel. */
 
 export function Brand({ scheme }) {
   return <div className={`brand ${scheme}`}>MNR</div>
@@ -29,14 +32,4 @@ export function CycleRail({ scheme, dotRef }) {
       <i ref={dotRef} />
     </div>
   )
-}
-
-export function Cue({ scheme, text }) {
-  /* La pista se desvanece en medio segundo, asi que el texto tiene que
-     sobrevivir a su propia salida: vaciarlo apenas la ventana se cierra hace
-     que la frase desaparezca de golpe y solo se desvanezca la nada. Se conserva
-     el ultimo texto no vacio y se apaga nada mas la clase. */
-  const held = useRef('')
-  if (text) held.current = text
-  return <div className={`cue ${scheme}${text ? ' show' : ''}`}>{held.current}</div>
 }

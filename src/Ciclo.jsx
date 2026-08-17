@@ -3,7 +3,7 @@ import { createEngine, STAGES } from './engine/engine.js'
 import { BANDS } from './content/bands.jsx'
 import { Bands } from './components/Bands.jsx'
 import { SpecimenLabel } from './components/SpecimenLabel.jsx'
-import { Brand, Nav, CycleRail, Cue } from './components/Chrome.jsx'
+import { Brand, Nav, CycleRail } from './components/Chrome.jsx'
 import { ProjectsIndex } from './components/ProjectsIndex.jsx'
 
 /* El primer pintado tiene que salir ya con la etiqueta puesta. Un estado
@@ -15,7 +15,6 @@ const INITIAL_HUD = {
   stage: STAGES[0].name,
   note: STAGES[0].note,
   dark: STAGES[0].dark,
-  cue: '',
   from: '',
 }
 
@@ -45,6 +44,7 @@ export function Ciclo() {
   const canvasRef = useRef(null)
   const flashRef = useRef(null)
   const cycleDotRef = useRef(null)
+  const labelRef = useRef(null)
   const bandEls = useRef([])
 
   const [hud, setHud] = useState(INITIAL_HUD)
@@ -59,7 +59,7 @@ export function Ciclo() {
     const engine = createEngine({
       canvas: canvasRef.current,
       bands: BANDS.map((b, i) => ({ from: b.from, to: b.to, el: bandEls.current[i] })),
-      refs: { flash: flashRef, cycleDot: cycleDotRef },
+      refs: { flash: flashRef, cycleDot: cycleDotRef, label: labelRef },
       /* El motor solo manda los campos que CAMBIARON, asi que se funden sobre
          el estado anterior. Mandar el snapshot entero obligaria a comparar seis
          strings por frame para descubrir que no cambio ninguno. */
@@ -80,10 +80,9 @@ export function Ciclo() {
       <Brand scheme={scheme} />
       <Nav scheme={scheme} />
       <CycleRail scheme={scheme} dotRef={cycleDotRef} />
-      <Cue scheme={scheme} text={hud.cue} />
 
       <SpecimenLabel
-        scheme={scheme}
+        labelRef={labelRef}
         age={hud.age}
         stage={hud.stage}
         note={hud.note}
@@ -95,9 +94,8 @@ export function Ciclo() {
         <ProjectsIndex />
       </main>
 
-      {/* Veintiocho pantallas de recorrido. No es decoracion: es el unico
-          insumo del que sale `p`, y con menos un flick de trackpad se come
-          tres fases enteras. */}
+      {/* El recorrido. No es decoracion: es el unico insumo del que sale `p`, y
+          con menos, un flick de trackpad se come tres fases enteras. */}
       <div id="spacer" />
     </>
   )

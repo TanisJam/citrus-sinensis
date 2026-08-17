@@ -22,7 +22,6 @@ export function Bands({ onBandRef }) {
           key={i}
           ref={el => onBandRef(i, el)}
           className={`band${b.align ? ' ' + b.align : ''}`}
-          data-scheme={b.scheme}
         >
           <div className="col">{b.body}</div>
         </section>

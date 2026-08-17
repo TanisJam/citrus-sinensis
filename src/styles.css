@@ -5,17 +5,45 @@
    variable hacia adentro sin ganar nada. */
 :root{
   --accent:#6E9247;
-  --ink:#17201A;
-  --ink-dim:rgba(23,32,26,.62);
-  --bone:#F2EDE2;
-  --bone-dim:rgba(242,237,226,.66);
+  /* El acento se usa para texto chico en versalitas, y ahi el naranja maduro
+     (#F08C1C) sobre la lamina clara del climax daba 2:1 — ilegible. El motor
+     escribe --accent; esta variable es la que USA el texto, y la elige el
+     esquema de mas abajo. */
+  --accent-ink:var(--accent);
+  --ink:#141C16;
+  --ink-dim:rgba(20,28,22,.80);
+  --bone:#F6F2E9;
+  --bone-dim:rgba(246,242,233,.84);
   --pad:clamp(18px,4.2vw,60px);
-  --display:"Bodoni Moda",Didot,"Times New Roman",serif;
-  --body:"Newsreader",Georgia,serif;
+  --display:"Fraunces",Georgia,"Times New Roman",serif;
+  --body:"Source Serif 4",Georgia,serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  /* CARTELA.
+     Un texto sobre un canvas que cambia de color con la hora no se resuelve
+     eligiendo bien el color del texto: no hay un color que ande sobre cielo de
+     mediodia Y sobre tierra en sombra.
+
+     Se probaron los dos recursos que se usan para eso y los dos fallaron por la
+     misma razon. El text-shadow engorda el contorno de cada letra y ensucia el
+     dibujo de la tipografia justo donde mas se nota. El scrim —la capa de
+     gradiente que recomienda la practica establecida para texto sobre imagen—
+     se lee como un difuminado sucio flotando encima del dibujo, y no hay
+     ajuste que lo arregle: el problema es que NO TIENE SUPERFICIE. Una mancha
+     que se desvanece no es un objeto, y el ojo la registra como error de
+     impresion antes que como fondo.
+
+     Lo que si tiene superficie es una cartela. Una lamina de especimen no
+     resuelve el texto tapando el dibujo: le da al texto su propia TARJETA DE
+     PAPEL, apoyada sobre la hoja, con su borde y su sombra corta. La convencion
+     tiene doscientos anios y es literalmente el lenguaje de esta pieza — que ya
+     tiene una etiqueta de especimen con edad, etapa y nota de campo.
+     El contraste deja de ser un problema de mezcla y pasa a ser uno de
+     materiales: hay papel, y encima del papel hay tinta. */
+  --card:250,247,240;
+  --card-edge:20,28,22;
 }
 *{box-sizing:border-box}
-body{margin:0;background:#BBD3E4;font-family:var(--body);font-weight:300;
+body{margin:0;background:#BBD3E4;font-family:var(--body);font-weight:400;
   -webkit-font-smoothing:antialiased;overflow-x:hidden}
 #scene{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
 /* Granulación, no ruido.
@@ -29,50 +57,96 @@ body{margin:0;background:#BBD3E4;font-family:var(--body);font-weight:300;
 #grain{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.15;mix-blend-mode:multiply;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><filter id='n' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch' result='f'/><feTurbulence type='fractalNoise' baseFrequency='.009' numOctaves='2' stitchTiles='stitch' result='c'/><feComposite in='f' in2='c' operator='arithmetic' k1='1' k2='.35' k3='0' k4='0'/></filter><rect width='600' height='600' filter='url(%23n)'/></svg>");
   background-size:600px 600px}
-/* El destello tapa el corte del bucle, así que tiene que ir por ENCIMA de
-   todo lo que cambia en el corte — y las etiquetas cambian en el corte. En
-   z-index 3 sólo cubría el canvas: el dibujo se iba a blanco, pero
-   "year 7.8 / ENDOSPERM" saltaba a "day 0 / DISPERSAL" a pleno contraste, y
-   cruzando la costura hacia atrás el rosetón reaparecía sin nada que lo
-   cubriera. Va arriba de las capas de texto (5 y 6). */
+/* El destello tapaba el corte del bucle. Ya no hay corte que tapar: la semilla
+   que se suelta del gajo es la misma que empieza la vuelta siguiente, en la
+   misma posicion y al mismo tamano. Queda el nodo, apagado. */
 #flash{position:fixed;inset:0;z-index:7;pointer-events:none;background:#FFF6E2;opacity:0}
-/* 15 pantallas para todo el ciclo hacían que un flick de trackpad se comiera
-   tres o cuatro fases enteras. Con 28, un flick cubre ~7% del ciclo en vez
-   de ~25%, y las ventanas cortas (antesis, caída de junio, elección) duran
-   lo suficiente como para verlas. */
-#spacer{height:4000vh}
+/* El recorrido. Eran 28 pantallas; ahora 40, y no por capricho: el climax se
+   lleva 0.32 del scroll en vez de 0.27 y las cinco bandas de texto tienen un
+   peso propio en el reparto, asi que la misma altura habria dejado el resto del
+   ciclo mas apretado que antes. Con 40, un flick de trackpad cubre ~5% del
+   ciclo y las ventanas cortas duran lo suficiente como para leerlas. */
+#spacer{height:5600vh}
 
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
   clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
 /* ---------- Etiqueta de espécimen ---------- */
-.label{position:fixed;z-index:6;left:var(--pad);bottom:var(--pad);max-width:min(340px,68vw);
-  pointer-events:none;transition:color .8s ease}
-.label .age{font-family:var(--display);font-weight:400;font-size:clamp(28px,4.2vw,50px);
-  line-height:.9;letter-spacing:-.015em;font-variant-numeric:tabular-nums;
-  font-variation-settings:"opsz" 96}
-.label .stage{font-family:var(--mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase;
-  margin-top:13px;color:var(--accent);transition:color .8s ease}
-.label .note{font-family:var(--body);font-style:italic;font-size:13px;line-height:1.5;
-  margin-top:9px;opacity:.72;border-top:1px solid currentColor;padding-top:9px}
-.label .from{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-  margin-top:10px;color:var(--accent);opacity:0;transition:opacity .6s ease}
-.label .from.show{opacity:1}
+/* Es la cartela del especimen, literalmente: edad, etapa y nota de campo. La
+   convencion la pone en una esquina baja de la lamina, y ahi estaba desde
+   siempre — lo unico que le faltaba era el papel. */
+/* Papel: opaco casi del todo —no translucido, o vuelve a competir con lo que
+   tiene detras—, borde de un pixel, y SIN RADIO, porque una tarjeta de papel se
+   corta con guillotina y no tiene las esquinas redondeadas. Ese detalle es la
+   mitad de que se lea como cartela y no como componente de interfaz.
+   La sombra es corta y casi sin desplazamiento: apoyada sobre la lamina, no
+   flotando sobre ella. */
+.label{position:fixed;z-index:6;left:var(--pad);bottom:var(--pad);
+  width:min(376px,72vw);pointer-events:none;margin:0;
+  padding:20px 24px 22px;color:var(--ink);
+  border:1px solid rgba(var(--card-edge),.16);
+  /* .97 y no .94: con seis centesimas de transparencia, el arbol se veia
+     asomando POR DENTRO de la cartela como una mancha, y una tarjeta a traves
+     de la cual se adivina el dibujo vuelve al mismo problema del difuminado.
+     Tres centesimas alcanzan para que el papel no se lea como pintura plana y
+     no alcanzan para que se vea nada a traves. */
+  background:rgba(var(--card),.97);
+  box-shadow:0 1px 0 rgba(var(--card-edge),.10),0 10px 30px -14px rgba(10,14,11,.45)}
+
+/* El grano de la cartela.
+   `#grain` vive en z-index 2 y las cartelas en 5 y 6, asi que el velo de fibra
+   que cubre TODO el dibujo no les llega. Sin esto las cartelas salen perfectas
+   y lisas encima de una lamina granulada, y esa perfeccion es justamente lo que
+   las delata como div en vez de como papel: el ojo no compara los colores, le
+   alcanza con notar que una superficie no tiene la textura que tienen todas las
+   demas.
+   Es el mismo filtro de `#grain` con la frecuencia baja subida —una tarjeta
+   chica no puede llevar cumulos del tamano de la pantalla— y va MUY flojo:
+   alcanza con que exista. */
+.label,.band .col{
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='p' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch' result='f'/><feTurbulence type='fractalNoise' baseFrequency='.035' numOctaves='2' stitchTiles='stitch' result='c'/><feComposite in='f' in2='c' operator='arithmetic' k1='1' k2='.4' k3='0' k4='0'/></filter><rect width='300' height='300' filter='url(%23p)' opacity='.10'/></svg>");
+  background-size:300px 300px;
+  background-blend-mode:multiply}
+
+.label .age{font-family:var(--display);font-weight:600;font-size:clamp(28px,4.2vw,50px);
+  line-height:.95;letter-spacing:-.01em;font-variant-numeric:tabular-nums;
+  font-variation-settings:"opsz" 144,"SOFT" 0}
+.label .stage{font-family:var(--mono);font-weight:600;font-size:11px;letter-spacing:.2em;
+  text-transform:uppercase;margin-top:13px;color:var(--accent-ink);transition:color .8s ease}
+.label .note{font-family:var(--body);font-style:italic;font-weight:400;font-size:14px;
+  line-height:1.55;margin-top:10px;opacity:.92;
+  border-top:1px solid currentColor;padding-top:10px}
+.label .from{font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;margin-top:10px;color:var(--accent-ink);opacity:0;
+  transition:opacity .6s ease}
+.label .from.show{opacity:.95}
 
 .brand{position:fixed;z-index:6;top:var(--pad);left:var(--pad);font-family:var(--mono);
-  font-size:11px;letter-spacing:.3em;text-transform:uppercase;transition:color .8s ease}
-.nav{position:fixed;z-index:6;top:var(--pad);right:var(--pad);display:flex;gap:18px;
-  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  font-weight:600;font-size:11px;letter-spacing:.3em;text-transform:uppercase;
   transition:color .8s ease}
-.nav a{color:inherit;text-decoration:none;opacity:.6;transition:opacity .3s}
+.nav{position:fixed;z-index:6;top:var(--pad);right:var(--pad);display:flex;gap:18px;
+  font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;transition:color .8s ease}
+.nav a{color:inherit;text-decoration:none;opacity:.82;transition:opacity .3s}
 .nav a:hover{opacity:1}
+/* El viraje claro/oscuro le queda SOLO a lo que cae directo sobre el dibujo: la
+   marca, la navegacion y el riel del ciclo. Esos no tienen papel debajo, asi que
+   si no viran desaparecen — la marca en tinta sobre la tierra en sombra no se
+   ve, y en hueso sobre el cielo de mediodia tampoco.
+   Las cartelas no viran mas. El esquema existia porque el texto caia sobre el
+   fondo; con papel propio, el papel no tiene por que cambiar de color segun la
+   hora del dia, y verlo alternar entre blanco y tinta cada vez que pasa una
+   noche es exactamente el tipo de cosa que delata que hay un sistema debajo. */
 .on-dark{color:var(--bone)}
 .on-light{color:var(--ink)}
-
-.cue{position:fixed;z-index:6;left:50%;bottom:calc(var(--pad) + 4px);transform:translateX(-50%);
-  font-family:var(--mono);font-size:10px;letter-spacing:.26em;text-transform:uppercase;
-  pointer-events:none;opacity:0;transition:opacity .5s ease,color .8s ease;white-space:nowrap}
-.cue.show{opacity:.85}
+/* Sobre fondo claro ni el naranja maduro ni el verde del follaje llegan a 3:1
+   en un cuerpo de 11px. Se oscurecen hasta que pasan, conservando el matiz:
+   sigue siendo el mismo acento que el motor esta escribiendo, no otro color. */
+:root,.on-light{--accent-ink:color-mix(in oklab,var(--accent) 44%,#1B1206)}
+/* Y sobre fondo oscuro, al reves: el acento se aclara. El verde de follaje al
+   62% de luma sobre tierra en sombra es el mismo problema con el signo
+   cambiado, y una sola de las dos correcciones deja la mitad del ciclo mal. */
+.on-dark{--accent-ink:color-mix(in oklab,var(--accent) 66%,#FBF6E8)}
 
 .cycle{position:fixed;z-index:6;right:var(--pad);top:50%;transform:translateY(-50%);
   width:2px;height:min(46vh,340px);background:currentColor;opacity:.22;pointer-events:none;
@@ -88,36 +162,64 @@ body{margin:0;background:#BBD3E4;font-family:var(--body);font-weight:300;
 .band.r .col{text-align:right}
 .band.c{justify-items:center}
 .band.c .col{text-align:center}
-.band[data-scheme="dark"]{color:var(--bone)}
-.band[data-scheme="dark"] p{color:var(--bone-dim)}
-.band[data-scheme="light"]{color:var(--ink)}
-.band[data-scheme="light"] p{color:var(--ink-dim)}
+/* La portada, anclada arriba: el centro del cuadro es de la semilla. */
+.band.hero{align-content:start;padding-top:9vh}
+.band{color:var(--ink)}
+.band p{color:var(--ink-dim)}
 
-.band h1{font-family:var(--display);font-weight:400;font-size:clamp(42px,8vw,110px);
-  line-height:.94;letter-spacing:-.02em;margin:0;font-variation-settings:"opsz" 96}
-.band h1 i{font-style:italic;font-weight:400}
-.band h2{font-family:var(--display);font-weight:400;font-size:clamp(28px,4.4vw,56px);
-  line-height:1.0;letter-spacing:-.015em;margin:0 0 20px;font-variation-settings:"opsz" 72}
-.band .sci{font-family:var(--body);font-style:italic;font-size:clamp(14px,1.5vw,19px);
-  margin:18px 0 0;opacity:.75}
-.band p{font-size:clamp(15px,1.35vw,18px);line-height:1.62;margin:0 0 14px;max-width:42ch}
+/* Cada banda es una cartela apoyada sobre la lamina. Un solo `.col` con papel
+   debajo resuelve exactamente lo que el difuminado no podia: el contraste deja
+   de depender de que haya detras, porque ya no hay nada detras — hay papel.
+   Y el dibujo se ve ENTERO alrededor, que es lo que el scrim no permitia: una
+   capa que se desvanece sobre media pantalla ensucia media pantalla. */
+.band .col{padding:26px 30px 28px;
+  border:1px solid rgba(var(--card-edge),.16);
+  /* .97 y no .94: con seis centesimas de transparencia, el arbol se veia
+     asomando POR DENTRO de la cartela como una mancha, y una tarjeta a traves
+     de la cual se adivina el dibujo vuelve al mismo problema del difuminado.
+     Tres centesimas alcanzan para que el papel no se lea como pintura plana y
+     no alcanzan para que se vea nada a traves. */
+  background:rgba(var(--card),.97);
+  box-shadow:0 1px 0 rgba(var(--card-edge),.10),0 14px 40px -18px rgba(10,14,11,.5);
+  transition:background .8s ease,border-color .8s ease}
+/* La portada lleva el nombre a 110px: con la medida de una banda comun la
+   cartela le quedaba corta y el titulo se partia donde no debe. */
+.band.hero .col{max-width:min(680px,86vw)}
+
+.band h1{font-family:var(--display);font-weight:600;font-size:clamp(42px,8vw,110px);
+  line-height:.95;letter-spacing:-.015em;margin:0;
+  font-variation-settings:"opsz" 144,"SOFT" 0,"WONK" 1}
+.band h1 i{font-style:italic;font-weight:600}
+.band h2{font-family:var(--display);font-weight:600;font-size:clamp(28px,4.4vw,56px);
+  line-height:1.04;letter-spacing:-.012em;margin:0 0 20px;
+  font-variation-settings:"opsz" 144,"SOFT" 0,"WONK" 1}
+.band .sci{font-family:var(--body);font-style:italic;font-weight:400;
+  font-size:clamp(15px,1.55vw,20px);margin:18px 0 0;opacity:.9}
+/* 15px al 300 sobre un canvas en movimiento no era un cuerpo de lectura, era
+   una marca de agua. Cuerpo mas grande, peso 400 real, y medida corta. */
+.band p{font-size:clamp(16px,1.45vw,19px);line-height:1.65;margin:0 0 15px;max-width:40ch;
+  font-weight:400}
+.band p b{font-weight:600}
 .band.r p{margin-left:auto}
 .band.c p{margin-left:auto;margin-right:auto}
 
 .rows{list-style:none;padding:0;margin:22px 0 0;border-top:1px solid currentColor}
 .rows li{display:flex;gap:18px;align-items:baseline;justify-content:space-between;
   padding:13px 0;border-bottom:1px solid currentColor}
-.rows b{font-family:var(--display);font-weight:400;font-size:clamp(18px,2.1vw,25px)}
-.rows span{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  opacity:.6;white-space:nowrap}
+.rows b{font-family:var(--display);font-weight:600;font-size:clamp(18px,2.1vw,25px);
+  font-variation-settings:"opsz" 144,"SOFT" 0}
+.rows span{font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;opacity:.78;white-space:nowrap}
 
-.go{display:inline-block;margin-top:14px;font-family:var(--mono);font-size:11px;
-  letter-spacing:.18em;text-transform:uppercase;color:#1B1206;background:var(--accent);
-  text-decoration:none;padding:13px 24px;border-radius:999px;
+.go{display:inline-block;margin-top:14px;font-family:var(--mono);font-weight:600;
+  font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#17100A;
+  background:var(--accent);text-decoration:none;padding:13px 24px;border-radius:999px;
+  box-shadow:0 2px 14px rgba(12,18,10,.24);
   transition:transform .3s,background .8s ease}
 .go:hover{transform:translateY(-2px)}
 a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
-.meta{font-family:var(--mono);font-size:11px;letter-spacing:.06em;margin-top:22px}
+.meta{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.06em;
+  margin-top:22px}
 .meta a{color:inherit;text-decoration:none;border-bottom:1px solid currentColor}
 
 @media (max-width:820px){

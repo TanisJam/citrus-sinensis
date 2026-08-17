@@ -13,18 +13,21 @@
  */
 export const BANDS = [
   {
-    from: 0, to: 0.048, scheme: 'light', align: 'c',
+    /* `hero` la ancla arriba en vez de centrarla. La semilla ahora abre la pieza
+       plantada en el medio del encuadre, y una banda centrada le caeria justo
+       encima — que es el unico sitio donde no puede caer. */
+    from: 0, to: 0.048, align: 'c hero',
     body: (
       <>
         <h1>Mauricio<br /><i>Romero</i></h1>
         <p className="sci">
-          Software, writing, and the systems behind it — grown from one seed, in one scroll.
+          Software, writing, and the systems behind it — grown from one seed, in one loop.
         </p>
       </>
     ),
   },
   {
-    from: 0.085, to: 0.165, scheme: 'dark', align: '',
+    from: 0.085, to: 0.165, align: '',
     body: (
       <>
         <h2>Four embryos,<br />one tree</h2>
@@ -36,7 +39,7 @@ export const BANDS = [
     ),
   },
   {
-    from: 0.195, to: 0.262, scheme: 'dark', align: 'r',
+    from: 0.195, to: 0.262, align: 'r',
     body: (
       <>
         <h2>Currently</h2>
@@ -49,7 +52,7 @@ export const BANDS = [
     ),
   },
   {
-    from: 0.315, to: 0.400, scheme: 'light', align: '',
+    from: 0.315, to: 0.400, align: '',
     body: (
       <>
         <h2>How I work</h2>
@@ -60,7 +63,7 @@ export const BANDS = [
     ),
   },
   {
-    from: 0.440, to: 0.510, scheme: 'light', align: 'r',
+    from: 0.440, to: 0.510, align: 'r',
     body: (
       <>
         <h2>Writing</h2>
@@ -73,7 +76,11 @@ export const BANDS = [
     ),
   },
   {
-    from: 0.560, to: 0.622, scheme: 'light', align: 'c',
+    /* Estaba centrada, y centrada dejo de poder estarlo cuando el texto paso a
+       vivir en una cartela opaca: el centro del cuadro es del arbol en flor,
+       que es exactamente lo que esta banda acompania. Una lamina pone el dibujo
+       en el medio y las cartelas en los margenes; no al reves. */
+    from: 0.560, to: 0.622, align: 'r',
     body: (
       <>
         <h2>Say hi</h2>
