@@ -142,6 +142,54 @@ const o2=n=>{n=n<0?0:n>255?255:Math.round(n);return (n<16?'0':'')+n.toString(16)
 const rgbH=(r,g,b)=>'#'+o2(r)+o2(g)+o2(b);
 function mixH(a,b,t){const A=hx(a),B=hx(b);
   return rgbH(lerp(A[0],B[0],t),lerp(A[1],B[1],t),lerp(A[2],B[2],t));}
+
+/* ============ mezcla que no ensucia ============
+   `mixH` interpola en sRGB, en línea recta. Entre dos colores de matiz opuesto
+   esa recta PASA POR EL EJE NEUTRO: mezclando el tostado del atardecer con el
+   azul del día, a mitad de camino queda 156,159,158 — gris. El croma cae de 79
+   a 3. Es el mismo error que ensuciar el cuadro mezclando complementarios en la
+   paleta en vez de girar el matiz.
+   La mezcla de abajo trabaja en OKLCh: interpola claridad y croma por separado,
+   y el matiz POR EL ARCO, de modo que el camino rodea el eje neutro en vez de
+   atravesarlo. El croma de llegada es el que uno pidió, no el que sobrevive. */
+const srgbToLin=v=>{v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
+const linToSrgb=v=>255*(v<=0.0031308?12.92*v:1.055*Math.pow(v,1/2.4)-0.055);
+function toLab(h){
+  const c=hx(h),r=srgbToLin(c[0]),g=srgbToLin(c[1]),b=srgbToLin(c[2]);
+  const l=Math.cbrt(0.4122214708*r+0.5363325363*g+0.0514459929*b);
+  const m=Math.cbrt(0.2119034982*r+0.6806995451*g+0.1073969566*b);
+  const s=Math.cbrt(0.0883024619*r+0.2817188376*g+0.6299787005*b);
+  return [0.2104542553*l+0.7936177850*m-0.0040720468*s,
+          1.9779984951*l-2.4285922050*m+0.4505937099*s,
+          0.0259040371*l+0.7827717662*m-0.8086757660*s];
+}
+function labToHex(L,A,B){
+  const l=Math.pow(L+0.3963377774*A+0.2158037573*B,3);
+  const m=Math.pow(L-0.1055613458*A-0.0638541728*B,3);
+  const s=Math.pow(L-0.0894841775*A-1.2914855480*B,3);
+  return rgbH(linToSrgb( 4.0767416621*l-3.3077115913*m+0.2309699292*s),
+              linToSrgb(-1.2684380046*l+2.6097574011*m-0.3413193965*s),
+              linToSrgb(-0.0041960863*l-0.7034186147*m+1.7076147010*s));
+}
+/* `dir` fuerza el sentido del giro cuando el arco corto va por donde no
+   corresponde: del atardecer al día, el cielo real gira por el magenta y el
+   violeta, no por el verde. */
+function mixL(a,b,t,dir){
+  if(t<=0) return a; if(t>=1) return b;
+  const A=toLab(a),B=toLab(b);
+  const ca=Math.hypot(A[1],A[2]), cb=Math.hypot(B[1],B[2]);
+  let ha=Math.atan2(A[2],A[1]), hb=Math.atan2(B[2],B[1]);
+  let d=hb-ha;
+  const TAU=6.283185307179586;
+  while(d> Math.PI) d-=TAU;
+  while(d<-Math.PI) d+=TAU;
+  if(dir&&Math.sign(d)!==Math.sign(dir)&&d!==0) d-=Math.sign(d)*TAU;
+  /* Un color casi neutro no tiene matiz propio: si se lo interpola igual, el
+     ruido de su ángulo tiñe toda la transición. Toma prestado el del otro. */
+  if(ca<0.004) ha=hb-d;
+  const L=lerp(A[0],B[0],t), C=lerp(ca,cb,t), H=ha+d*t;
+  return labToHex(L,C*Math.cos(H),C*Math.sin(H));
+}
 /* ============ vocabulario de easing ============
    Dos curvas para todo es la razón de que el crecimiento se sienta mecánico:
    nada anticipa, nada sobrepasa, nada asienta. */
@@ -199,9 +247,22 @@ function updateLight(pe,sky,night){
   // Sol bajo = luz más cálida y más rasante. De noche, azul y casi toda ambiente.
   LIGHT.sun=mixH(mixH('#FFF6DC','#F4A855',LIGHT.low*0.92),'#35507C',night);
   LIGHT.sky=mixH(sky.b,'#22304A',night*0.65);
-  // De noche la luz es más difusa (ambiente alta) pero hay mucha menos: la
-  // exposición es lo que baja. Sin esto la noche sale más clara que el día.
+  /* De noche hay mucha menos luz, y eso lo baja la exposición. Lo que NO
+     corresponde es subir tanto la ambiente: con `amb` en 0.60 y `exp` en 0.42 el
+     rango de iluminación queda entre 0.25 y 0.42 —el 29% del rango de día— y por
+     eso la noche medía 40 niveles de 255. Un frame entero dentro del 16% de la
+     escala tonal no es una noche, es una mancha.
+     El error de fondo era tratar la noche como si fuera toda ambiente. La luna
+     es direccional: una luna llena proyecta sombras nítidas. Baja el nivel, no
+     el modelado. La ambiente de día también baja, porque un relleno del 42% no
+     deja que nada llegue a oscuro de verdad. */
   LIGHT.amb=0.30+0.12*(1-LIGHT.low)+0.30*night;
+  /* Se probó subir la exposición por encima de 1 para devolver por arriba lo que
+     la sombra se llevaba por abajo. Medido, no movió el histograma ni un nivel:
+     `amb` y `exp` sólo tocan lo que pasa por `shadeL` —árbol, hojas, fruto— y
+     eso es una fracción chica del frame. El cielo y la tierra son gradientes
+     directos, y son ELLOS los que fijan el rango tonal de la imagen. Queda
+     anotado para no volver a intentarlo por acá. */
   LIGHT.exp=1-0.58*night;
   LIGHT.sunA=hx(LIGHT.sun); LIGHT.skyA=hx(LIGHT.sky);
 }
@@ -254,10 +315,13 @@ const CAM_Y=[[0,-1180],[0.048,-90],[0.085,30],[0.125,90],[0.165,170],
   [0.205,270],[0.245,140],[0.275,-10],[0.335,-70],[0.395,-120],[0.465,-170],
   [0.545,-210],[0.615,-230],[0.690,-240],[0.750,-250],[0.790,-262],
   [0.812,-300],[0.856,-360],[0.95,-1180]];
-const CAM_S=[[0,1.9],[0.048,2.5],[0.085,3.0],[0.125,2.6],[0.165,2.1],[0.205,1.7],
+/* Los dos extremos tienen que ser el MISMO valor: 0.95 renderiza lo mismo que
+   0, y ahí es donde cierra el bucle. Subieron los dos juntos de 1.9 a 2.6 para
+   que la semilla abra la pieza con tamaño de sujeto y no de detalle. */
+const CAM_S=[[0,2.6],[0.048,2.6],[0.085,3.0],[0.125,2.6],[0.165,2.1],[0.205,1.7],
   [0.245,1.5],[0.275,1.35],[0.335,1.05],[0.395,0.85],[0.465,0.68],[0.545,0.58],
   [0.615,0.55],[0.690,0.54],[0.750,0.56],[0.790,0.64],[0.812,0.92],
-  [0.856,1.6],[0.95,1.9]];
+  [0.856,1.6],[0.95,2.6]];
 
 /* ============ etapas + notas de campo ============ */
 const stageAt=p=>{let s=STAGES[0];for(const q of STAGES) if(p>=q.p) s=q; return s;};
@@ -367,29 +431,93 @@ function buildTree(seed){
   const picked=[];
   for(let k=0;k<term.length&&picked.length<want;k+=stepI) picked.push(term[k]);
 
-  // Las tres que sobreviven se eligen por su x, bien separadas y en lo alto de
-  // la copa: si no, la elección con el mouse no tendría dónde apuntar.
+  // Las tres que llevan proyecto se eligen por su x, bien separadas y en lo alto
+  // de la copa: son las que el clímax puede abrir, así que tienen que leerse
+  // como tres cosas distintas y no como tres frutos apilados.
   let hi=[...picked];
   let minY=0; for(const i of hi) if(fy[i]<minY) minY=fy[i];
   const canopy=hi.filter(i=>fy[i]<minY*0.30);
   const pool=(canopy.length>=8?canopy:hi).slice().sort((a,b)=>fx[a]-fx[b]);
   const keepNodes=[pool[0], pool[pool.length>>1], pool[pool.length-1]];
 
+  /* Y los que no cuentan nada.
+     El árbol daba TRES naranjas en toda la copa, y la nota de campo lo defendía
+     con el dato correcto —menos del 2% de las flores cuaja—. Pero el 2% es
+     sobre las flores del árbol REAL, que son miles: acá hay 46 flores dibujadas
+     representando esos miles, así que aplicarle el 2% a la muestra en vez de a
+     la población es contar dos veces la misma poda. Un naranjo adulto lleva
+     cientos de frutos; el dato honesto de la nota no obliga a dibujar tres.
+     Éstos no tienen proyecto ni nombre ni se pueden abrir. Están para que el
+     árbol sea un naranjo cargado y no un árbol con tres adornos. */
+  const EXTRA_FRUIT=6;
+  const extra=new Set();
+  for(let k=0;k<EXTRA_FRUIT;k++){
+    // Repartidos sobre el mismo pool ordenado por x, corridos medio paso para
+    // no caer sobre los tres con nombre.
+    const idx=Math.round((k+0.5)/EXTRA_FRUIT*(pool.length-1));
+    const node=pool[idx];
+    if(node!==undefined&&keepNodes.indexOf(node)<0) extra.add(node);
+  }
+
   for(const node of picked){
     const rr=r();
     const ki=keepNodes.indexOf(node);
-    const fate = ki>=0 ? 'keep' : (rr<0.82?'post':'june');
+    const keep = ki>=0 || extra.has(node);
+    const fate = keep ? 'keep' : (rr<0.82?'post':'june');
     const ph0=r()*6.283;
     const s={node,fate,ph:ph0,jit:(r()-0.5)*10,
       // Desfase de apertura y de viraje, derivados de ph para no tocar la
       // secuencia aleatoria ni mover la topología ya validada.
       stag:(Math.sin(ph0*11.3)*0.5+0.5)*0.018-0.009,
-      turn:(ki>=0?ki*0.09:0)+(Math.sin(ph0*5.7)*0.5+0.5)*0.03,
+      /* Los sin nombre viran repartidos por todo el rango en vez de en tres
+         escalones: si viran juntos, seis naranjas cambiando de color en el
+         mismo cuadro delatan que es una animación. */
+      turn:(ki>=0?ki*0.09:(Math.sin(ph0*3.1)*0.5+0.5)*0.26)
+           +(Math.sin(ph0*5.7)*0.5+0.5)*0.03,
+      // Tamaño: en un árbol cargado no hay dos frutos del mismo calibre.
+      cal:ki>=0?1:0.74+0.30*(Math.sin(ph0*7.7)*0.5+0.5),
       dropAt: fate==='post' ? 0.626+r()*0.024 : 0.650+r()*0.030, proj:ki};
     sites.push(s);
     if(ki>=0) keepSites[ki]=s;
   }
-  return {par,rel,len,dep,ph,leaf,thorn,n,bend,z,lay,
+  /* ---- brotes interiores ----
+     El centro de la copa seguía vacío después de sembrar hojas hacia adentro, y
+     no era un problema de cuántas hojas: era de dónde colgarlas. Este árbol se
+     abre en abanico, así que tiene TRECE ramas de nivel 3 y treinta y tres de
+     nivel 4 ocupando todo el centro del cuadro, contra ciento sesenta y una
+     ramitas apretadas en el borde. Repartir follaje sobre esa estructura da
+     exactamente lo que se veía: una corona densa y un hueco.
+     Lo que falta ahí no son hojas, es MADERA. Un naranjo llena su interior con
+     brotes cortos que salen de la madera vieja hacia adentro de la copa —el
+     tipo que la poda de cítricos llama chupón cuando se va de largo— y son
+     ellos los que sostienen el follaje interior. Así que se agregan.
+
+     Con su PROPIO generador. Si estos brotes salieran del `r()` del árbol,
+     cada llamada correría la secuencia y saldría otro árbol entero: otra
+     topología, otras ramas madres, otros nodos elegidos para los frutos. El
+     árbol de arriba no se entera de que esto existe. */
+  const spur=[];
+  {
+    const rs=mul(seed^0x5BD1E995);
+    for(let i=0;i<n;i++){
+      const d=dep[i];
+      if(d<2||d>4||leaf[i]) continue;
+      const k=rs()<0.55?2:1;
+      for(let j=0;j<k;j++){
+        spur.push({
+          p:i,
+          u:0.30+rs()*0.58,               // dónde nace sobre la rama madre
+          /* Hacia ADENTRO. Un brote que sale siguiendo la dirección de su rama
+             va al mismo borde que ya está lleno; el que sirve es el que se
+             cruza hacia el interior, casi perpendicular y tirando hacia abajo,
+             que es además el que de verdad brota de la madera vieja. */
+          rel:(rs()<0.5?-1:1)*(1.05+rs()*0.75)+0.18,
+          len:len[i]*(0.30+rs()*0.26),
+        });
+      }
+    }
+  }
+  return {par,rel,len,dep,ph,leaf,thorn,n,bend,z,lay,spur,
     A:new Float32Array(n),X:new Float32Array(n),Y:new Float32Array(n),G:new Float32Array(n),
     wb:new Float32Array(n),wt:new Float32Array(n),
     th:new Float32Array(n),om:new Float32Array(n)};   // resorte del viento
@@ -479,10 +607,22 @@ function buildWorld(){
   /* Agregados: no todos son del mismo mineral. Tres matices y un rango de
      tamaño más ancho — un suelo real tiene un canto grande cada varios chicos. */
   const STONE_C=['#6A5A44','#7A6446','#584C3A'];
-  stones=Array.from({length:64},()=>{
-    const big=r()<0.16?2.1:1;
+  /* Eran 64 repartidas parejo sobre 1700×860, o sea una piedra cada 22.000 px²:
+     la tierra quedaba como un campo liso con algún canto suelto, y un campo
+     liso no es tierra, es un relleno. Ahora son 150, y —esto es lo que importa—
+     ya no se reparten al azar uniforme.
+     Un perfil de suelo real se ordena por profundidad: arriba, donde la raíz
+     trabaja y la lluvia lava los finos, quedan muchos cantos chicos; abajo, la
+     carga compacta y aparecen los bloques grandes y espaciados. `Math.pow` del
+     azar sesga la profundidad, y el tamaño sigue a la profundidad en vez de ser
+     independiente de ella. Densidad Y orden: repartir más piedras al azar sólo
+     hubiera dado más ruido parejo. */
+  stones=Array.from({length:150},()=>{
+    const dep=Math.pow(r(),0.72);            // sesgo hacia la parte de arriba
+    const big=r()<(0.08+0.22*dep)?2.1:1;     // los bloques viven abajo
+    const sc=big*(0.62+0.55*dep);            // y arriba todo es más chico
     const a=r()*3.14;
-    return {x:(r()-0.5)*1700,y:20+r()*860,w:(5+r()*17)*big,h:(3.5+r()*9)*big,
+    return {x:(r()-0.5)*1900,y:20+dep*880,w:(5+r()*17)*sc,h:(3.5+r()*9)*sc,
             a,ca:Math.cos(a),sa:Math.sin(a),c:STONE_C[(r()*3)|0]};
   });
   /* Hojarasca: lo que quedó del ciclo anterior, tumbado sobre la superficie.
@@ -521,8 +661,78 @@ function resize(){
    Los dos tramos del bucle llevan peso 1 y el resto compensa EXACTAMENTE, de
    modo que scroll y p coinciden en 0–0.05 y en 0.95–1. Por eso el corte sigue
    siendo demostrablemente invisible y los tests no necesitan cambiar. */
-const W_GROW=0.9/1.06, W_END=1.8/1.06;   // 0.74·a + 0.16·b = 0.90, con b = 2a
-const WSEG=[[0,0.05,1],[0.05,0.79,W_GROW],[0.79,0.95,W_END],[0.95,1,1]];
+/* Cuánto del scroll se lleva cada tramo. Suman 1 y los dos extremos del bucle
+   valen exactamente lo que miden en p, que es la condición de que el corte sea
+   invisible: en 0–0.05 y en 0.95–1, scroll y p son el mismo número.
+   El clímax subió de 0.2717 a 0.32 y el crecimiento bajó a 0.58. La fase
+   interior pasó a tener un movimiento más —el giro que lleva la fruta de perfil
+   a sección— y ese movimiento no se puede meter a presión entre los que ya
+   estaban: una transición sin recorrido es un corte. */
+const S_LOOP=0.05, S_GROW=0.58, S_END=0.32;
+const P_LOOP=0.05, P_END=0.79, P_TAIL=0.95;
+
+/* El tramo de crecimiento llevaba UN peso parejo de punta a punta, y eso repartía
+   el scroll por duración biológica en vez de por densidad de acontecimiento. Las
+   ventanas medidas lo muestran: `Juvenility` se llevaba 0.120 de p —la más larga
+   de las trece— para mostrar un árbol que solamente engorda, mientras que
+   `Emergence`, que es el brote rompiendo la tierra, se llevaba 0.050.
+   Acá van pesos RELATIVOS: cuánto scroll se lleva cada fase por unidad de p.
+   Mayor que uno se demora, menor pasa de largo. Se normalizan abajo, así que lo
+   único que importa es la proporción entre ellos — y como la normalización
+   fuerza que el tramo entregue exactamente el mismo scroll que antes, los dos
+   extremos del bucle no se enteran y el corte sigue siendo invisible. */
+const GROW_REL=[
+  [0.050,0.135,0.85],   // imbibición
+  [0.135,0.250,0.70],   // hidrotropismo: la raíz es larga y no cambia mucho
+  [0.250,0.300,1.55],   // emergencia: el brote rompe la tierra. Se mira.
+  [0.300,0.400,0.62],   // ciclos de brote
+  [0.400,0.520,0.55],   // juvenilidad: el árbol engorda y nada más
+  [0.520,0.560,0.85],   // inducción
+  [0.560,0.632,1.50],   // antesis: la flor abre una sola vez en todo el ciclo
+  [0.632,0.700,0.95],   // caída de junio
+  [0.700,0.790,0.90],   // viraje de color
+];
+/* Las bandas de texto piden su propio tiempo, y no coincide con el de la
+   biología. `Juvenility` no tiene nada que mostrar y encima lleva la banda más
+   larga de la pieza; `Hydrotropism` es una raíz que baja despacio y abajo hay
+   tres párrafos. Con el scroll eso lo resolvía el lector: frenaba. Sin scroll
+   no lo resuelve nadie, así que lo resuelve el reparto.
+   Cada rango es [desde, hasta, factor] y multiplica el peso ya calculado. */
+const READ_REL=[
+  [0.085,0.165,1.55],   // "Four embryos, one tree"
+  [0.195,0.262,1.45],   // "Currently"
+  [0.315,0.400,1.60],   // "How I work" — tres párrafos
+  [0.440,0.510,1.50],   // "Writing"
+  [0.560,0.622,1.15],   // "Say hi" — cae sobre la antesis, que ya iba lenta
+];
+/* La normalización es lo que sostiene el invariante: el tramo tiene que
+   ENTREGAR el mismo scroll total que cuando era un peso solo. Repartir distinto
+   adentro es gratis; cambiar el total no lo es. */
+/* Se parte el tramo de crecimiento por TODOS los bordes —los de la biología y
+   los de la lectura— y cada trozo se lleva el producto de los dos pesos. Así
+   los dos repartos conviven sin que ninguno tenga que conocer al otro, y la
+   normalización de abajo sigue forzando que el tramo entregue exactamente el
+   mismo tiempo que entregaba con un peso plano: los dos extremos del bucle no
+   se enteran y el corte sigue siendo invisible. */
+const GROW_SEG=(()=>{
+  const cuts=new Set();
+  for(const g of GROW_REL){cuts.add(g[0]);cuts.add(g[1]);}
+  for(const g of READ_REL){cuts.add(g[0]);cuts.add(g[1]);}
+  const xs=[...cuts].filter(x=>x>=P_LOOP&&x<=P_END).sort((a,b)=>a-b);
+  const out=[];
+  for(let i=0;i<xs.length-1;i++){
+    const a=xs[i],b=xs[i+1],m=(a+b)/2;
+    let w=1;
+    for(const g of GROW_REL) if(m>=g[0]&&m<g[1]) w=g[2];
+    for(const g of READ_REL) if(m>=g[0]&&m<g[1]) w*=g[2];
+    out.push([a,b,w]);
+  }
+  return out;
+})();
+const GROW_K=S_GROW/GROW_SEG.reduce((a,g)=>a+(g[1]-g[0])*g[2],0);
+const WSEG=[[0,P_LOOP,1],
+            ...GROW_SEG.map(g=>[g[0],g[1],g[2]*GROW_K]),
+            [P_END,P_TAIL,S_END/(P_TAIL-P_END)],[P_TAIL,1,1]];
 function sToP(u){
   let s=u;
   for(const g of WSEG){
@@ -532,6 +742,7 @@ function sToP(u){
   }
   return 1;
 }
+
 function pToS(p){
   let s=0;
   for(const g of WSEG){
@@ -551,22 +762,25 @@ function maxScroll(){return document.documentElement.scrollHeight-innerHeight;}
 function readScroll(){const m=maxScroll();target=m>0?clamp(sToP(clamp(scrollY/m))):0;}
 addEventListener('scroll',readScroll,{passive:true});
 
-let mouseX=0.5, pointerSeen=false;
-addEventListener('pointermove',e=>{
-  mouseX=clamp(e.clientX/innerWidth);
-  if(e.pointerType==='mouse') pointerSeen=true;
-},{passive:true});
-addEventListener('pointerdown',e=>{
-  mouseX=clamp(e.clientX/innerWidth);
-  if(e.pointerType==='mouse') pointerSeen=true;
-},{passive:true});
-addEventListener('keydown',e=>{
-  if(e.key==='ArrowLeft'){mouseX=clamp(mouseX-0.2);pointerSeen=true;}
-  if(e.key==='ArrowRight'){mouseX=clamp(mouseX+0.2);pointerSeen=true;}
-});
-
-// estado de la elección
-let chosenFruit=1, chosenGajo=2, carried=null, fruitScreen=[];
+/* ============ la elección ============
+   Esto lo decidía la posición del puntero: en la ventana de selección, el
+   tercio de pantalla donde estuviera el mouse elegía la fruta, y más adelante
+   el gajo. Se fue, y no por costo — por honestidad. Era una interacción a medio
+   pulir sobre la que la pieza igual no tenía nada definido: no había forma de
+   saber que había una elección, no había estado, no había vuelta atrás, y el
+   resultado no llevaba a ninguna parte. Un control que no se anuncia y no se
+   puede deshacer no es interacción, es una trampa.
+   Lo que queda es determinista y sí tiene una lectura: cada VUELTA muestra otro
+   proyecto. Quedándose, la pieza recorre el catálogo entero en vez de repetir
+   siempre el mismo — y como el gajo avanza con un paso que no divide a cinco,
+   tampoco se repite el par (proyecto, gajo) hasta la vuelta larga.
+   El scroll sigue siendo el que maneja el tiempo. Eso nunca estuvo en duda. */
+let chosenFruit=0, chosenGajo=2, carried=null, fruitScreen=[];
+function loopTurn(){
+  carried=IDEAS[PROJECTS[chosenFruit].gajos[chosenGajo].seeds[0]];
+  chosenFruit=(chosenFruit+1)%PROJECTS.length;
+  chosenGajo=(chosenGajo+2)%PROJECTS[chosenFruit].gajos.length;
+}
 function wrap(){
   /* Sólo cuando la REPRODUCCIÓN llegó al final, no cuando llegó el scroll: con
      el tope de velocidad p puede ir muy por detrás de target, y saltar acá se
@@ -574,6 +788,7 @@ function wrap(){
   if(target<=0.9992||p<0.9985) return;
   const np=target-LOOP_AT;
   target=np;p=np;pPrev=np;skipV=true;   // el salto del bucle no es velocidad
+  loopTurn();
   window.scrollTo(0,pToS(np)*maxScroll());
 }
 
@@ -710,14 +925,35 @@ function buildDither(){
 }
 
 /* ============ cielo y suelo ============ */
+/* El tramo largo era el de vuelta: del tostado del atardecer al azul del día no
+   se llega sin pasar por algún lado, y en línea recta ese lado es el gris. Se
+   parte en dos con una parada de madrugada — el cielo de verdad vuelve por el
+   violeta y el salmón, nunca por el neutro— y cada salto queda entre matices
+   vecinos. La mezcla va por OKLCh, así que el croma es el que se pidió. */
 function skyColors(pe,night){
-  const A=key([[0,0],[0.25,1],[0.52,2],[0.70,3],[0.95,4]],pe,t=>t);
+  const A=key([[0,0],[0.25,1],[0.52,2],[0.70,3],[0.82,4],[0.95,5]],pe,t=>t);
+  /* La última parada es la primera, byte por byte. Es un CICLO: el cielo con el
+     que cierra la vuelta tiene que ser el cielo con el que abre la siguiente.
+     Estaba en '#7EB2D2','#D6E4E9' contra '#6FA6CF','#C9DDE9', y esa diferencia
+     —quince niveles de luma sobre la superficie más grande del cuadro— era el
+     salto que el destello blanco del final estaba tapando. Con el destello
+     afuera, tapar dejó de ser una opción y hubo que arreglarlo. */
   const P=[['#6FA6CF','#C9DDE9'],['#7FB3D4','#DCE7E4'],['#8DBBD6','#E8E2CE'],
-           ['#B98C6A','#EBCB96'],['#7EB2D2','#D6E4E9']];
-  const i=Math.min(3,Math.floor(A)),f=A-i;
-  let a=mixH(P[i][0],P[i+1]?P[i+1][0]:P[i][0],f);
-  let b=mixH(P[i][1],P[i+1]?P[i+1][1]:P[i][1],f);
-  if(night>0.01){a=mixH(a,'#101C33',night);b=mixH(b,'#22304A',night);}
+           ['#B98C6A','#EBCB96'],['#7E6796','#E5A48F'],['#6FA6CF','#C9DDE9']];
+  const i=Math.min(4,Math.floor(A)),f=A-i;
+  let a=mixL(P[i][0],P[i+1]?P[i+1][0]:P[i][0],f);
+  let b=mixL(P[i][1],P[i+1]?P[i+1][1]:P[i][1],f);
+  /* La noche también es una mezcla larga: apagar un cielo cálido contra un
+     navy por el camino recto lo pasa por el mismo gris de antes.
+     Y los dos destinos estaban demasiado juntos: 27 y 47 de luma, o sea que la
+     noche entera cabía en veinte niveles. Medido sobre el frame, el cielo iba de
+     54 en el cenit a 77 en el horizonte — veintitrés niveles para toda la
+     imagen. Eso no es una noche, es un tono.
+     Un cielo nocturno de verdad tiene un gradiente vertical fuerte: negro
+     arriba, y la luz que queda apoyada en el horizonte. Separando los dos
+     destinos aparece el oscuro que el cuadro no tenía, y el horizonte se queda
+     como la nota clara. */
+  if(night>0.01){a=mixL(a,'#070C1A',night);b=mixL(b,'#2E3E64',night);}
   return {a,b};
 }
 function drawSky(view,sky,night){
@@ -726,16 +962,26 @@ function drawSky(view,sky,night){
   g.addColorStop(0,sky.a);g.addColorStop(1,sky.b);
   ctx.fillStyle=g;
   ctx.fillRect(view.x0-10,view.y0-10,view.w+20,Math.min(view.y1,0)-view.y0+20);
-  if(night<0.7){
-    // El sol está donde dice LIGHT: lo que ilumina y lo que se ve coinciden.
+  /* Antes esto se apagaba con `night<0.7`, y ahí la noche se quedaba sin UNA
+     sola nota clara: un cuadro cuyo punto más luminoso es el fondo no tiene
+     dónde apoyar el ojo. Cualquiera que haya pintado una nocturna sabe que lo
+     primero que se pone es la luna.
+     Es el mismo halo, no uno nuevo: la fuente sigue estando donde dice LIGHT,
+     así que lo que ilumina y lo que se ve siguen coincidiendo. Lo que cambia con
+     la noche es el color —de sol cálido a luna fría— y el tamaño: el halo lunar
+     es mucho más ceñido que el resplandor del sol. */
+  {
     const yb=Math.min(view.y1,0), hgt=yb-view.y0;
     const sx=view.x0+view.w*(0.5+LIGHT.x*0.42), sy=yb+LIGHT.y*hgt*0.78;
-    const R=420*(1+LIGHT.low*0.55);     // rasante = halo más ancho, aire de por medio
+    const moon=night>0.01?mixH(LIGHT.sun,'#DCE6F5',night):LIGHT.sun;
+    const R=(420*(1+LIGHT.low*0.55))*(1-0.55*night);
     const rg=ctx.createRadialGradient(sx,sy,0,sx,sy,R);
-    rg.addColorStop(0,rgba(LIGHT.sun,0.62));
-    rg.addColorStop(0.34,rgba(LIGHT.sun,0.20));
-    rg.addColorStop(1,rgba(LIGHT.sun,0));
-    ctx.globalAlpha=(1-night)*0.9;ctx.fillStyle=rg;
+    rg.addColorStop(0,rgba(moon,0.62));
+    rg.addColorStop(0.34,rgba(moon,0.20));
+    rg.addColorStop(1,rgba(moon,0));
+    /* De día el halo sigue la exposición como siempre; de noche no se apaga del
+       todo, se queda en una nota chica y clara. */
+    ctx.globalAlpha=lerp((1-night)*0.9,0.34,night);ctx.fillStyle=rg;
     ctx.beginPath();ctx.arc(sx,sy,R,0,6.283);ctx.fill();
     ctx.globalAlpha=1;
   }
@@ -793,31 +1039,59 @@ function drawSoil(view,camS){
     ctx.closePath();ctx.fill();
     ctx.restore();
   }
+  /* Bolsas de humedad.
+     Eran un `arc` perfecto con un gradiente radial encima, y eso no se lee como
+     agua en la tierra: se lee como un disco azul con blur pegado sobre el
+     dibujo, exactamente el mismo defecto que tenía la masa de copa. El agua en
+     un suelo no ocupa un círculo — ocupa los poros, así que su contorno lo
+     dicta la textura de la tierra, no la geometría.
+     Dos correcciones. La forma pasa a ser un contorno irregular cerrado con
+     bezier, del que el gradiente no puede salirse; y la intensidad baja a la
+     mitad, porque una bolsa de humedad es tierra MÁS OSCURA Y MÁS FRÍA, no una
+     luz encendida abajo. */
   for(const w of POCKETS){
     if(w.y+w.r<view.y0||w.y-w.r>view.y1) continue;
+    ctx.save();
+    ctx.beginPath();
+    const N=11;
+    for(let k=0;k<=N;k++){
+      const a=k*6.283/N;
+      // El radio ondula con dos armónicos que no son múltiplo uno del otro:
+      // la forma nunca se cierra sobre sí misma en un patrón reconocible.
+      const rr=w.r*(0.80+0.16*Math.sin(a*3+w.x*0.03)+0.10*Math.sin(a*5-w.y*0.02));
+      const x=w.x+Math.cos(a)*rr, y=w.y+Math.sin(a)*rr*0.86;
+      if(k===0) ctx.moveTo(x,y);
+      else{
+        const pa=(k-1)*6.283/N, ma=(pa+a)*0.5;
+        const mr=w.r*(0.80+0.16*Math.sin(ma*3+w.x*0.03)+0.10*Math.sin(ma*5-w.y*0.02))*1.06;
+        ctx.quadraticCurveTo(w.x+Math.cos(ma)*mr,w.y+Math.sin(ma)*mr*0.86,x,y);
+      }
+    }
+    ctx.closePath();
+    ctx.clip();
     const rg=ctx.createRadialGradient(w.x,w.y,0,w.x,w.y,w.r);
     /* Oscurecimiento de borde. Una mancha de agua no se desvanece parejo desde
        el centro: al secarse, la tensión superficial arrastra el pigmento HACIA
        AFUERA y el aro del borde queda más denso que el medio. Es el efecto que
-       delata a una acuarela de verdad, y era justo el que faltaba: dos paradas
-       de gradiente cayendo a cero es un resplandor, no una mancha. */
-    rg.addColorStop(0,'rgba(96,146,164,.30)');
-    rg.addColorStop(0.55,'rgba(92,140,158,.11)');
-    rg.addColorStop(0.87,'rgba(64,104,120,.25)');
-    rg.addColorStop(1,'rgba(64,104,120,0)');
-    ctx.fillStyle=rg;ctx.beginPath();ctx.arc(w.x,w.y,w.r,0,6.283);ctx.fill();
-    // Borde con textura: una bolsa de humedad no tiene contorno limpio, se
-    // deshilacha en el grano de la tierra. Grano fino, no burbujas.
-    ctx.fillStyle='rgba(120,164,180,.16)';
+       delata a una acuarela de verdad. */
+    rg.addColorStop(0,'rgba(58,84,96,.16)');
+    rg.addColorStop(0.58,'rgba(52,78,90,.07)');
+    rg.addColorStop(0.88,'rgba(38,62,72,.15)');
+    rg.addColorStop(1,'rgba(38,62,72,.02)');
+    ctx.fillStyle=rg;ctx.fillRect(w.x-w.r,w.y-w.r,w.r*2,w.r*2);
+    // Grano húmedo: la tierra empapada tiene los agregados más marcados, no
+    // burbujas de luz. Va recortado por la misma forma, así que no se escapa.
+    ctx.fillStyle='rgba(30,50,58,.13)';
     ctx.beginPath();
     for(let k=0;k<88;k++){
       const a=k*2.39996+w.x*0.01;
-      const rr=w.r*(0.66+0.34*((Math.sin(k*12.9898+w.y)*0.5+0.5)));
-      const bx=w.x+Math.cos(a)*rr, by=w.y+Math.sin(a)*rr;
-      const bs=w.r*(0.012+0.022*(Math.sin(k*4.7)*0.5+0.5));
+      const rr=w.r*(0.30+0.62*((Math.sin(k*12.9898+w.y)*0.5+0.5)));
+      const bx=w.x+Math.cos(a)*rr, by=w.y+Math.sin(a)*rr*0.86;
+      const bs=w.r*(0.010+0.020*(Math.sin(k*4.7)*0.5+0.5));
       ctx.moveTo(bx+bs,by);ctx.arc(bx,by,bs,0,6.283);
     }
     ctx.fill();
+    ctx.restore();
   }
   /* Partículas. Eran `fillRect`: cuadraditos perfectos alineados al eje, que a
      cámara cerca se leen como polvo de monitor y no como grano de tierra. Nada
@@ -852,21 +1126,51 @@ function drawSoil(view,camS){
       ctx.moveTo(s.x+w*s.ca,s.y+dy+w*s.sa);
       ctx.ellipse(s.x,s.y+dy,w,h,s.a,0,6.283);
     };
-    ctx.globalAlpha=0.30;ctx.fillStyle='#140F09';
-    ctx.beginPath();
-    for(const s of vis) arc(s,s.h*0.32,1,1);
-    ctx.fill();
-    ctx.globalAlpha=0.30;
+    /* El detalle estaba repartido parejo, y eso es lo contrario de lo que hace
+       un dibujante. Con alpha 0.30 en todas partes las piedras no leían como
+       piedras: leían como manchas, porque una forma sin contraste suficiente no
+       es una forma. Y subirle el contraste a TODAS tampoco sirve — un cuadro
+       con detalle uniforme no tiene dónde mirar.
+       La jerarquía va por distancia al sujeto, que en este corte vive en x≈0:
+       cerca, la piedra tiene hueco, cuerpo, cara y contorno; lejos se deshace
+       en la masa de tierra. Es el mismo criterio con el que un ojo enfoca. */
+    const halfW=Math.max(1,view.w*0.5);
+    const near=[],far=[];
+    for(const s of vis) (Math.abs(s.x)/halfW<0.42?near:far).push(s);
+    /* Un lote por nivel de jerarquía: dos rellenos en lugar de uno, no uno por
+       piedra. Se mantiene el orden de coste que ya tenía. */
+    /* `dyf` es un FACTOR sobre la altura de cada piedra, no un desplazamiento
+       fijo: el hueco de un canto grande cae más abajo que el de uno chico, y
+       pasarlo como constante aplasta esa diferencia. */
+    const batch=(list,dyf,fw,fh,col,al)=>{
+      if(!list.length) return;
+      ctx.globalAlpha=al;ctx.fillStyle=col;
+      ctx.beginPath();
+      for(const s of list) arc(s,s.h*dyf,fw,fh);
+      ctx.fill();
+    };
+    batch(far ,0.32,1,1,'#140F09',0.22);   // el hueco que deja el canto por debajo
+    batch(near,0.32,1,1,'#140F09',0.46);
+    // El cuerpo ya llevaba alpha por piedra, así que acá la caída es continua.
     for(const s of vis){
+      const d=clamp(Math.abs(s.x)/halfW);
+      ctx.globalAlpha=0.24+0.30*(1-d)*(1-d);
       ctx.fillStyle=s.c;
       ctx.beginPath();arc(s,0,1,1);ctx.fill();
     }
     // La cara de arriba es una lente fina pegada al borde, no una tapa: una
     // elipse ancha y centrada deja su propio contorno cruzando la piedra.
-    ctx.globalAlpha=0.11;ctx.fillStyle='#CBB78E';
-    ctx.beginPath();
-    for(const s of vis) arc(s,-s.h*0.44,0.70,0.34);
-    ctx.fill();
+    batch(far ,-0.44,0.70,0.34,'#CBB78E',0.09);
+    batch(near,-0.44,0.70,0.34,'#CBB78E',0.20);
+    /* El contorno es lo que termina de convertir la mancha en forma, y va SÓLO
+       en las de cerca: dibujarlo en todas devuelve el detalle uniforme que
+       estábamos sacando. */
+    if(near.length){
+      ctx.globalAlpha=0.16;ctx.strokeStyle='#0F0B06';ctx.lineWidth=1.1;
+      ctx.beginPath();
+      for(const s of near) arc(s,0,1,1);
+      ctx.stroke();
+    }
   }
   ctx.globalAlpha=1;
 
@@ -1112,15 +1416,50 @@ function seedPath(g,s){
   g.quadraticCurveTo(-w*1.08,-s*0.70,0,-s);
   g.closePath();
 }
-function seedDraw(s,fill,line){
+/* `draw` de 0 a 1 traza la semilla en vez de encenderla.
+   Las semillas dentro del gajo aparecían subiendo el alpha, que es la forma de
+   hacer aparecer algo cuando no querés que se note que apareció — y acá es
+   exactamente al revés: la semilla es lo que la pieza quiere que mires, porque
+   es lo que se va a llevar al ciclo siguiente.
+   Así que se DIBUJA: primero el contorno, trazándose desde la calaza hacia la
+   punta con `setLineDash` sobre un dash único del largo del propio contorno, y
+   detrás va entrando el relleno. Es literalmente la animación de un path de
+   SVG, hecha en canvas — el mismo recurso y la misma lectura. El rafe sale al
+   final, cuando ya hay semilla donde ponerlo. */
+function seedDraw(s,fill,line,draw){
+  const d=draw===undefined?1:clamp(draw);
+  if(d<=0) return;
   seedPath(ctx,s);
-  ctx.fillStyle=fill;ctx.fill();
-  ctx.strokeStyle=line;ctx.lineWidth=Math.max(0.5,s*0.070);ctx.stroke();
-  if(s>6){                      // el rafe: la costura que recorre la semilla
+  if(d>=1){
+    ctx.fillStyle=fill;ctx.fill();
+  }else{
+    // El relleno persigue al trazo, un cuarto de vuelta atrás.
+    const a=ctx.globalAlpha;
+    ctx.globalAlpha=a*clamp((d-0.25)/0.55);
+    ctx.fillStyle=fill;ctx.fill();
+    ctx.globalAlpha=a;
+  }
+  ctx.strokeStyle=line;ctx.lineWidth=Math.max(0.5,s*0.070);
+  if(d<1){
+    /* El perímetro de la silueta, con holgura: `setLineDash` necesita un largo
+       y medirlo de verdad exigiría integrar cuatro cuadráticas por frame. El
+       contorno de la semilla es una lágrima de semieje `s`, así que su
+       perímetro anda por 5·s; con un dash más largo que el real el trazo llega
+       antes de tiempo, y con uno más corto no cierra nunca. 5.4 cierra. */
+    const per=s*5.4;
+    ctx.setLineDash([per,per]);
+    ctx.lineDashOffset=per*(1-d);
+    ctx.stroke();
+    ctx.setLineDash([]);ctx.lineDashOffset=0;
+  }else ctx.stroke();
+  if(s>6&&d>0.62){              // el rafe: la costura que recorre la semilla
+    const r=clamp((d-0.62)/0.38), per=s*1.5;
     ctx.beginPath();
     ctx.moveTo(-s*0.26,-s*0.56);
     ctx.quadraticCurveTo(-s*0.44,0,-s*0.14,s*0.68);
+    if(r<1){ ctx.setLineDash([per,per]); ctx.lineDashOffset=per*(1-r); }
     ctx.stroke();
+    if(r<1){ ctx.setLineDash([]); ctx.lineDashOffset=0; }
   }
 }
 
@@ -1464,8 +1803,18 @@ function ribbon(S,o,a,b,sm){
 }
 
 const leafBk=[[],[],[]], thornBuf=[];   // hojas por plano de copa
-const LEAF=5;                           // floats por hoja
+const LEAF=6;                           // floats por hoja
 const LEAF_BINS=6, LEAF_AGE=3;
+/* Un nudo cada tantas unidades de brote. Es lo que hace que la cuenta de hojas
+   siga a la LONGITUD de la rama y no a su nivel: las de adentro son las largas,
+   así que se llevan más hojas, que es exactamente donde faltaban.
+   Un número fijo por rama repartía al revés — 161 ramitas del borde con tres
+   hojas cada una contra 13 ramas del centro con dos. */
+const NODE_SP=14;
+/* Tramo del brote donde se siembran. La punta las carga hacia el extremo —el
+   cítrico amontona el flush ahí— y el brote interior las reparte parejo. */
+const LEAF_U_TIP=[0.45,1.00];
+const LEAF_U_MID=[0.22,0.92];
 // El pliegue conduplicado: las dos mitades de la lámina se inclinan en sentidos
 // opuestos alrededor del nervio central, así que reciben incidencias distintas.
 const FOLD=0.30;
@@ -1475,6 +1824,9 @@ const FOLD=0.30;
    dos depende del tiempo ambiente, así que se cachean y el frame típico no
    mezcla ni un color. */
 let palK=-1, leafK=-1, woodPal=null, leafPal=null, flowPal=null;
+/* Los tres tramos de la mancha de masa. Se arman con el resto de la paleta,
+   así que siguen al sol y a la madurez sin costar nada por frame. */
+let massC0='#2F5F2C', massC1='#2F5F2C', massC2='rgba(0,0,0,0)';
 function palettes(mat,lign){
   // Lignificación: el tallo de un cítrico joven es verde y fotosintético, y se
   // vuelve leñoso después. Marrón desde el día uno es un error botánico.
@@ -1520,6 +1872,24 @@ function palettes(mat,lign){
         rgba(LIGHT.sun,(0.10+0.16*d).toFixed(2))];    // glándulas de aceite
     }
   }
+  /* El interior de una copa no es una hoja oscura: es el hueco entre miles de
+     hojas, donde la luz llega después de rebotar varias veces. Va más oscuro y
+     más frío que la hoja más vieja, y como todo lo que está en sombra se tiñe
+     del cielo — por eso pasa por `shadeFlat` con incidencia negativa y en el
+     plano trasero, que es el que lleva la bruma. */
+  /* No tiene que ser una sombra: si va más oscuro que las hojas, lee como un
+     manchón detrás del árbol en vez de como el fondo de la copa. Es hoja vieja
+     en penumbra, apenas por debajo del tono más oscuro del follaje. */
+  /* Va por el plano 1, NO por el 0. El plano trasero aplica bruma del color del
+     cielo, que es lo correcto para follaje lejano — pero esto no es follaje
+     lejano, es el interior de la copa, lo más oscuro y lo más cerrado que hay.
+     Con la bruma puesta, la masa se iba hacia el cielo y la separación
+     figura/fondo medida se caía de 30 a 13: la copa dejaba de recortarse. */
+  const core=shadeFlat(mixH(old,'#26492A',0.42),-0.30,1);
+  const K=hx(core);
+  massC0=rgba(core,0.92);
+  massC1=rgba(core,0.78);
+  massC2=`rgba(${K[0]},${K[1]},${K[2]},0)`;
 }
 /* ============ viento ============
    La ráfaga no es global: es una onda que cruza el árbol en x. Cada nodo la
@@ -1536,6 +1906,11 @@ const WGAIN=0.015;
 
 let scaleNow=1;      // escala de cámara del frame, para el LOD de las hojas
 let interiorNow=0;   // cuánto avanzó la fase interior, para no pagar de más
+/* Pose en pantalla de la semilla que se va a soltar, publicada por el carpelo
+   que la contiene y leída por el viaje del final. Vive fuera porque la escribe
+   un punto del código que está dentro de seis transformaciones anidadas y la
+   lee otro que está fuera de todas. */
+let seedOut=null;
 function drawTree(g,t,pe,mat,scale,dt){
   const G=key(SHOOT,pe);
   if(G<=0.001) return;
@@ -1570,7 +1945,51 @@ function drawTree(g,t,pe,mat,scale,dt){
     g.X[i]=x;g.Y[i]=y;
 
     if(g.thorn[i]&&mat<1&&gg>0.6) thornBuf.push(x,y,a,4.5*Math.pow(0.8,d));
-    if(g.leaf[i]&&gg>0.5) leafBk[g.lay[i]].push(x,y,a,gg,g.ph[i]);
+    /* ---- dónde nacen las hojas ----
+       Acá había UNA hoja por nodo terminal, y eso es lo que dejaba la copa
+       hueca: en un árbol binario de siete niveles, TODOS los terminales están
+       sobre el perímetro. Salía una corona de follaje con el esqueleto pelado
+       adentro — que no es cómo se ve un naranjo, es cómo se ve un árbol
+       dibujado por su propia estructura de datos.
+       Un cítrico lleva las hojas A LO LARGO del brote, en filotaxis alterna, y
+       los brotes de los últimos niveles viven ADENTRO de la copa, no en el
+       borde. Así que las hojas se siembran sobre el segmento y no en su punta,
+       y no sólo sobre los terminales: los dos niveles anteriores también
+       brotan, y son ellos los que llenan el interior.
+       El costo se paga donde se ve: `LEAF_U` da tres hojas en el terminal —que
+       es donde el cítrico las amontona— y dos en los internos. */
+    if(gg>0.5){
+      const term=g.leaf[i];
+      /* Hasta dónde hacia adentro llega el follaje. Con dos niveles el hueco
+         del medio seguía ahí, y no por poca cantidad: la copa se abre en
+         abanico, así que los niveles 5 y 6 TAMBIÉN viven sobre el perímetro.
+         Lo que ocupa el centro del cuadro son las ramas de nivel 3 y 4, y
+         mientras esas estén peladas el árbol lee como alambre por adentro.
+         Un naranjo real sí tiene follaje interior —hojas viejas, en penumbra,
+         sobre madera ya lignificada— y es justamente lo que faltaba. */
+      if(term||d>=TREE_D-4){
+        const lay=g.lay[i];
+        const U=term?LEAF_U_TIP:LEAF_U_MID;
+        const ca=Math.cos(a),sa=Math.sin(a);
+        const nk=Math.min(6,Math.max(term?2:1,Math.round(g.len[i]/NODE_SP)));
+        /* Cuánto de esta hoja es hoja de SOMBRA. No es un tinte: una hoja de
+           interior de copa es más grande, más plana y más oscura que una de
+           sol, y las tres cosas salen de acá. La lámina crece porque tiene que
+           interceptar luz de rebote; se pone de cara porque no hay un sol al
+           que esquivar; y es la más vieja del árbol. */
+        const shade=term?0:clamp((TREE_D-2-d)/2.5);
+        for(let k=0;k<nk;k++){
+          const uu=U[0]+(U[1]-U[0])*(nk===1?1:k/(nk-1));
+          /* Filotaxis: cada hoja sale a ~137.5° de la anterior alrededor del
+             eje, que proyectado sobre el plano es un lado y el otro alternados
+             con una inclinación distinta cada vez. `ph` desfasa la serie por
+             rama para que dos ramas vecinas no salgan calcadas. */
+          const ang=a+(k&1?1:-1)*(0.62+0.34*Math.sin(g.ph[i]+k*2.399));
+          leafBk[lay].push(px+ca*L*uu, py+sa*L*uu, ang, gg,
+            g.ph[i]+k*2.399, shade);
+        }
+      }
+    }
   }
 
   // Los anchos necesitan el árbol entero ya crecido: segundo pase, hacia la raíz.
@@ -1597,9 +2016,51 @@ function drawTree(g,t,pe,mat,scale,dt){
     if(d<=2&&g.wb[i]>4) barkBuf.push(px,py,g.X[i],g.Y[i],nx,ny,wj,g.wb[i]*0.5,g.wt[i]*0.5,bm);
   }
 
-  /* Orden: copa trasera → estructura → copa media → copa delantera.
+  /* Los brotes interiores. Van DESPUÉS de `pipeWidths` porque su ancho sale del
+     de la rama madre, y antes de eso `g.wb` todavía tiene los valores de la
+     vuelta anterior. No participan del modelo de tubería —son ramitas de un
+     solo segmento, sin hijos que alimentar— así que su ancho es proporcional y
+     nada más. Tampoco llevan resorte propio: cuelgan del ángulo de su rama, que
+     ya trae el viento acumulado de toda la cadena. */
+  for(const sp of g.spur){
+    const i=sp.p, gg=g.G[i];
+    if(gg<=0.5) continue;
+    const pa=g.par[i];
+    const px=pa<0?0:g.X[pa], py=pa<0?-4:g.Y[pa];
+    const a=g.A[i], L=g.len[i]*gg;
+    const bx=px+Math.cos(a)*L*sp.u, by=py+Math.sin(a)*L*sp.u;
+    // Salen con el último tercio del crecimiento de su madre: la madera vieja
+    // no rebrota mientras la rama todavía se está haciendo.
+    const sg=clamp((gg-0.62)/0.38);
+    if(sg<=0.02) continue;
+    const sa=a+sp.rel, sl=sp.len*sg;
+    const ex=bx+Math.cos(sa)*sl, ey=by+Math.sin(sa)*sl;
+    const lay=g.lay[i];
+    const nx=Math.sin(sa), ny=-Math.cos(sa);
+    const pd=nx*LIGHT.x+ny*LIGHT.y;
+    let bin=Math.round((pd+1)*0.5*(PD_BINS-1));
+    if(bin<0)bin=0; else if(bin>PD_BINS-1)bin=PD_BINS-1;
+    const w=Math.max(0.6,g.wb[i]*0.22);
+    segBk[(2+lay)*PD_BINS+bin].push(bx,by,ex,ey,nx,ny,w*0.5,w*0.5,w*0.28,0);
+    // Y su follaje, que es para lo que están: hoja de sombra, la más grande y
+    // la más plana, porque viven en el centro de la copa.
+    const nk=Math.max(2,Math.min(5,Math.round(sp.len/NODE_SP)));
+    const ca=Math.cos(sa), sy2=Math.sin(sa);
+    for(let k=0;k<nk;k++){
+      const uu=0.24+0.72*(nk===1?1:k/(nk-1));
+      const ang=sa+(k&1?1:-1)*(0.58+0.30*Math.sin(g.ph[i]+k*2.399));
+      leafBk[lay].push(bx+ca*sl*uu, by+sy2*sl*uu, ang, gg,
+        g.ph[i]+k*2.399+1.7, 1);
+    }
+  }
+
+
+  /* Orden: masa → copa trasera → estructura → copa media → copa delantera.
      Así hay hojas que pasan claramente por detrás del tronco y otras por
-     delante, que es lo que le da espesor a la copa. */
+     delante, que es lo que le da espesor a la copa.
+     La masa va PRIMERA, y tiene que leer los tres planos antes de que nadie
+     dibuje: `drawLayer` vacía su bucket al terminar. */
+  drawCanopyMass();
   drawLayer(g,0);
   drawWood(0);drawWood(1);
   drawBark();drawThorns(mat);
@@ -1656,6 +2117,21 @@ function drawThorns(mat){
   ctx.stroke();ctx.globalAlpha=1;thornBuf.length=0;
 }
 
+/* ============ masa de copa ============
+   Acá vivía un bloqueo de masa: las hojas se agrupaban por celda y donde había
+   varias se pintaba un gradiente radial del tono profundo de la copa, para que
+   los huecos entre hoja y hoja dejaran de ser cielo.
+   El diagnóstico era correcto y la solución era el atajo. Un gradiente radial
+   no es masa de follaje: es una bola verde con blur, y a la escala de cámara de
+   esta pieza se lee exactamente así — manchones flotando sobre las ramas. Lo
+   que resuelve el hueco no es taparlo con niebla, es que haya hojas ahí, y ésa
+   es la corrección que se hizo arriba: las hojas ahora nacen a lo largo del
+   brote y sobre los dos niveles interiores, no sólo en las puntas.
+   Con follaje de verdad adentro, la masa no tiene nada que bloquear.
+   Queda el color `massC*` porque lo sigue usando la paleta como referencia del
+   fondo de copa. */
+function drawCanopyMass(){}
+
 // Escala de cada plano: la trasera se aleja, la delantera se acerca.
 const LAY_S=[0.88,1,1.08];
 function drawLayer(g,l){
@@ -1664,41 +2140,46 @@ function drawLayer(g,l){
   if(!B.length) return;
   const ls=LAY_S[l];
   for(let i=0;i<B.length;i+=LEAF){
-    const ph=B[i+4];
+    const ph=B[i+4], sh=B[i+5];
     // Variación por hoja: ±12% de tamaño, ±14° de inserción y un escalón de
     // incidencia. Una hoja no sale exactamente en el eje de su ramita.
     const v=ph*0.1591; const vr=v-Math.floor(v);
     const a=B[i+2]+(vr-0.5)*0.5;
-    const s=15*ls*(0.88+0.24*vr)*ease(clamp((B[i+3]-0.5)/0.5));
+    // Hoja de sombra: hasta un tercio más grande. No es licencia, es como
+    // funciona una copa — la lámina crece donde hay menos luz que interceptar.
+    const s=15*ls*(0.88+0.24*vr)*(1+0.34*sh)*ease(clamp((B[i+3]-0.5)/0.5));
     const sp=s*scaleNow;
     if(sp<1.2) continue;
-    /* Giro sobre el nervio, sesgado hacia el canto: en una copa hay muchas más
-       hojas de perfil que de plano, y ver todas la cara es lo que delataba el
-       recorte repetido. */
+    /* Giro sobre el nervio. Iba de 0.28 a 1, o sea que la hoja más de canto se
+       aplastaba al 28% de su ancho: a esa compresión una hoja de cítrico deja
+       de leerse como hoja y pasa a ser una astilla, y la copa se llenaba de
+       formas que no son la misma forma.
+       El piso sube a 0.58. Sigue habiendo escorzo —que es lo que evita la
+       calcomanía repetida— pero ahora todas las hojas de la copa se leen como
+       LA MISMA hoja vista desde ángulos distintos, que es lo que son.
+       Y la de sombra se pone casi de cara: sin un sol al que esquivar, la hoja
+       se acuesta para recibir todo lo que le llega de rebote. */
     const v2=ph*0.4771; const vr2=v2-Math.floor(v2);
-    const roll=0.28+0.72*vr2*(0.40+0.60*vr2);
+    const roll=lerp(0.58+0.42*vr2*(0.40+0.60*vr2), 0.88+0.12*vr2, sh);
     const pd=-Math.sin(a)*LIGHT.x+Math.cos(a)*LIGHT.y;
-    // La hoja de canto entrega menos cara al sol: baja de escalón.
-    let bi=Math.round((pd+1)*0.5*(LEAF_BINS-1)+(vr-0.5)*0.9+(roll-1)*1.1);
+    // La hoja de canto entrega menos cara al sol: baja de escalón. Y la de
+    // sombra baja dos más: está dentro de la copa, le llega luz rebotada.
+    let bi=Math.round((pd+1)*0.5*(LEAF_BINS-1)+(vr-0.5)*0.9+(roll-1)*1.1-sh*2.1);
     if(bi<0)bi=0; else if(bi>LEAF_BINS-1)bi=LEAF_BINS-1;
     // Edad del brote: recién salida es clara y amarillenta, y se oscurece.
-    let ag=Math.round(clamp((B[i+3]-0.5)/0.2)*(LEAF_AGE-1));
+    // La de sombra es siempre la más vieja: nadie renueva el interior.
+    let ag=Math.round(Math.max(sh,clamp((B[i+3]-0.5)/0.2))*(LEAF_AGE-1));
     const C=leafPal[(l*LEAF_AGE+ag)*LEAF_BINS+bi];
     // LOD por tamaño en pantalla: nada de bezier bajo 5 px, nada de nervadura
     // bajo 12 px. Con esta cámara casi toda la copa vive en el nivel medio.
     const lod=sp<5?0:sp<12?1:2;
     leafShape(B[i],B[i+1],a,s,C,lod,roll);
-    /* Los cítricos no reparten las hojas parejo a lo largo del brote: las
-       amontonan cerca de la punta. Una segunda hoja más chica, un poco más
-       atrás y con otro giro, es lo que le da masa a la copa. Sólo donde se ve:
-       por debajo de 6 px en pantalla no aporta nada y sí cuesta. */
-    if(sp>=6&&vr2>0.60){
-      const a2=a-0.62+vr*0.9, r2=0.30+0.70*vr*(0.40+0.60*vr);
-      const bk=s*0.34, ca=Math.cos(B[i+2]), sa=Math.sin(B[i+2]);
-      let b2=bi+(vr2>0.82?-1:0); if(b2<0)b2=0;
-      leafShape(B[i]-ca*bk,B[i+1]-sa*bk,a2,s*0.72,
-        leafPal[(l*LEAF_AGE+ag)*LEAF_BINS+b2],lod,r2);
-    }
+    /* Acá salía una segunda hoja más chica pegada a la primera, que era el
+       parche para darle masa a una copa que sólo tenía hojas en las puntas.
+       Ahora las hojas se siembran a lo largo del brote y sobre los niveles
+       interiores, así que la masa la da el follaje real: duplicar cada hoja
+       encima de sí misma sólo agregaría trabajo y una segunda silueta corrida
+       que se lee como error de registro. */
   }
   B.length=0;
 }
@@ -1775,6 +2256,34 @@ function rindTexture(x,y,R,base,al){
   }
   ctx.globalAlpha=al;
 }
+/* El acabado de una naranja: el halo de subsuperficie en el borde iluminado, la
+   sombra propia bajo el pedúnculo y el especular chico.
+   Vive acá, suelto, porque lo usan LOS DOS lugares donde aparece una naranja —
+   la de la rama y la que viaja al centro en el clímax— y son la misma fruta.
+   Cuando estaba escrito una sola vez dentro de `drawFlowers`, la del clímax se
+   dibujaba con otro material y en el cuadro del traspaso se veía el cambio de
+   superficie aunque la posición fuera continua. */
+function orangeSheen(x,y,R,body,al){
+  const la=Math.atan2(LIGHT.y,LIGHT.x);
+  // Subsurface: el borde iluminado de una naranja tiene halo cálido porque la
+  // luz atraviesa la cáscara.
+  ctx.globalAlpha=al*0.30;
+  ctx.strokeStyle=shadeD(mixH(body,'#FF9A2E',0.55),0.95);
+  ctx.lineWidth=R*0.16;
+  ctx.beginPath();ctx.arc(x,y,R*0.90,la-1.15,la+1.15);ctx.stroke();
+  // Sombra propia bajo el cáliz, que está arriba, del lado del pedúnculo.
+  ctx.globalAlpha=al*0.34;
+  ctx.fillStyle=shadeD(body,0.04);
+  ctx.beginPath();ctx.ellipse(x,y-R*0.66,R*0.46,R*0.22,0,0,6.283);ctx.fill();
+  // Especular chico y nítido, no un gradiente difuso.
+  ctx.globalAlpha=al*0.55;
+  ctx.fillStyle=rgba(LIGHT.sun,0.9);
+  ctx.beginPath();
+  ctx.ellipse(x+LIGHT.x*R*0.52,y+LIGHT.y*R*0.52,R*0.16,R*0.10,la,0,6.283);
+  ctx.fill();
+  ctx.globalAlpha=al;
+}
+
 function drawFlowers(g,pe,orange,camS,camY,pick){
   const setP=clamp((pe-0.618)/0.020);
   const cPetal=flowPal[0], cStamen=flowPal[1], cCalyx=flowPal[2], cSet=flowPal[3];
@@ -1876,11 +2385,36 @@ function drawFlowers(g,pe,orange,camS,camY,pick){
 
     if(s.fate==='keep'){
       const gr=key([[0.618,0.082],[0.650,0.11],[0.690,0.42],[0.735,0.78],[0.782,1]],pe);
-      const R=17*gr;
+      const R=17*gr*s.cal;
       const sel = pick>=0 && s.proj===pick;
-      const dim = pick>=0 && !sel ? 0.42 : 1;
+      /* La posición en pantalla se publica ANTES de decidir si el fruto se
+         dibuja: es de donde sale la fase interior, y si se publicara después
+         del `continue` de abajo, el primer frame del viaje se quedaría sin
+         origen y la naranja arrancaría desde el centro de la nada. */
+      if(s.proj>=0) fruitScreen[s.proj]={
+        x:W/2+x*camS, y:H*0.52+(y+R*0.85-camY)*camS, r:R*camS};
+      /* El fruto elegido DESAPARECE de la copa apenas empieza a viajar. Antes
+         seguía dibujándose acá mientras la fase interior pintaba otra naranja
+         encima, así que durante toda la entrada había dos: la del árbol y la
+         que crecía sobre ella. La que viaja es la misma que estaba en la rama,
+         y la única forma de que se lea así es que haya UNA. */
+      if(sel&&interiorNow>0.002) continue;
+      /* Acá se atenuaban al 42% todas las frutas menos la elegida, y el elegido
+         llevaba además un anillo blanco alrededor. Los dos eran señalización de
+         la ELECCIÓN: con el puntero encima había que decir cuál estaba
+         apuntada, y bajar las otras era la forma de decirlo.
+         Sin elección, lo único que quedaba de eso era una naranja con un aro
+         blanco y seis naranjas translúcidas — una fruta translúcida no es una
+         fruta, y el aro se leía como un resto de interfaz olvidado sobre el
+         dibujo. Lo que la fase que viene necesita es que se sepa cuál va a
+         viajar, y eso ya lo dice ella sola: es la que crece y se acerca. */
+      const dim=1;
       const pop = sel ? 1+0.13*clamp((pe-0.786)/0.02) : 1;
-      const green='#7BA544', ripe=PROJECTS[s.proj].hue;
+      // Los sin proyecto llevan un naranja de la casa, corrido por fruto: en un
+      // árbol real tampoco hay dos exactamente del mismo tono.
+      const green='#7BA544';
+      const ripe = s.proj>=0 ? PROJECTS[s.proj].hue
+                 : mixH('#E8791B','#F2A03C',(Math.sin(s.ph*9.1)*0.5+0.5));
       ctx.globalAlpha=dim;
       const cy=y+R*0.85, RR=R*pop, sp=RR*camS;
       sphere(x,cy,RR,green);
@@ -1947,17 +2481,7 @@ function drawFlowers(g,pe,orange,camS,camY,pick){
         }
         ctx.fill();
       }
-      ctx.globalAlpha=dim;
-      // El anillo se va apenas arranca el viaje, o queda asomando por detrás
-      // de la fruta grande.
-      if(sel&&interiorNow<0.12){
-        ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.6/camS;
-        ctx.beginPath();ctx.arc(x,cy,RR+7/camS,0,6.283);ctx.stroke();
-      }
       ctx.globalAlpha=1;
-      // guardar posición en pantalla para la fase interior
-      fruitScreen[s.proj]={
-        x:W/2+x*camS, y:H*0.52+(y+R*0.85-camY)*camS, r:R*camS};
     } else {
       const tf=(pe-s.dropAt)/0.062;
       if(tf<0){
@@ -1979,15 +2503,34 @@ function drawFlowers(g,pe,orange,camS,camY,pick){
    posición, misma orientación, mismo tamaño. Antes llegaba 4 px corrida y
    girada 540°, y al tocar tierra pegaba un salto — el mismo problema de
    continuidad que rompía la idea de que es la misma semilla volviendo.
-   Dos vueltas completas menos 0.2 rad son exactamente la pose de `drawSeed`. */
+   Una vuelta completa menos 0.2 rad es exactamente la pose de `drawSeed`.
+
+   Y el OTRO extremo importa igual. La semilla entraba por el borde de arriba,
+   chiquita, casi fuera de cuadro: la pieza abría con nada. Ahora arranca
+   PLANTADA en el centro del encuadre y grande, que es donde el ojo ya está
+   mirando, y desde ahí se aleja cayendo. Esa pose inicial no es libre — es la
+   misma en la que la deja el gajo al soltarla al final de la vuelta anterior, y
+   ése es todo el argumento de la pieza hecho geometría.
+
+   Constantes de la pose de partida, exportadas por `SEED_IN`, porque el final
+   del ciclo tiene que poder aterrizar EXACTAMENTE ahí. Si alguien toca una,
+   toca las dos puntas del bucle a la vez, que es justamente lo que se quiere. */
+const SEED_IN={s:13, rot:-0.2, hold:0.16};
 function drawFallingSeed(u,camY,hh,tint){
-  const e=u*u;
-  const y=lerp(camY-hh*0.62,4,e);
-  const x=Math.sin(u*7+1.2)*46*(1-e);
-  const rot=u*12.5664-0.2*u+Math.sin(u*13)*(1-u)*0.9;
+  /* Un arranque quieto. `u²` sale disparada desde el primer frame; la semilla
+     tiene que quedarse un momento donde la dejó la vuelta anterior —si no, el
+     empalme se ve pero no se lee— y recién después caer. */
+  const d=clamp((u-SEED_IN.hold)/(1-SEED_IN.hold));
+  const e=d*d;
+  const y=lerp(camY,4,e);
+  const x=Math.sin(d*7)*46*e*(1-e)*2;
+  const rot=SEED_IN.rot+d*6.2832+Math.sin(d*13)*(1-d)*d*0.9;
   ctx.save();ctx.translate(x,y);ctx.rotate(rot);
-  // Misma primitiva y mismas proporciones que la del gajo y la que germina.
-  seedDraw(11.5,shadeD(tint||SEED_BASE,0.82),'rgba(90,70,40,.45)');
+  /* Y el tamaño también empalma por los dos lados: sale de 13 —la semilongitud
+     con la que la suelta el gajo— y llega a 13, que es `drawSeed` en pe=0.05
+     con su hinchazón todavía en 1. En el medio se aleja y se achica. */
+  seedDraw(SEED_IN.s*(1-0.30*Math.sin(d*Math.PI)),
+    shadeD(tint||SEED_BASE,0.82),'rgba(90,70,40,.45)');
   ctx.restore();
 }
 
@@ -2268,8 +2811,14 @@ function drawPeelStrips(R,peel,side,ex,gradFill,albedoBase,rindBase){
      rango es corto: con curvatura 2 la tira da una vuelta y media antes de
      llegar a la mitad de la fruta, se enrolla sobre sí misma y en pantalla no
      se lee como cáscara enroscada sino como un bloque. En 0.5–0.9 la punta
-     alcanza a girar unos 130° al final, que es una cáscara abriéndose. */
-  const curv=0.50+0.40*peel;
+     alcanza a girar unos 130° al final, que es una cáscara abriéndose.
+     Acá SÍ entra `peelOut`, que es para lo que estaba escrita y hasta ahora no
+     se usaba en ningún lado. La cáscara no se enrosca de a poco: está tensa
+     contra la fruta, se suelta, se pasa de rosca y vuelve. Como la curvatura no
+     tiene tope duro —a diferencia de la línea de pelado, que se recorta contra
+     π— el sobrepaso se ve como lo que es, un rebote, en vez de reventar contra
+     un clamp. */
+  const curv=0.50+0.40*peelOut(peel);
   for(const s of PEEL_ORDER){
     const psi0=s*DPSI-1.5708, psi1=psi0+DPSI, psiC=psi0+DPSI*0.5;
     if((Math.cos(psiC)<0?-1:1)!==side) continue;
@@ -2310,12 +2859,57 @@ function drawPeelStrips(R,peel,side,ex,gradFill,albedoBase,rindBase){
         ctx.lineTo(hx1,-MV[i]*m1+oy);
       }
       ctx.closePath();ctx.fill();
+      /* Y sus poros. El puntilleo de la fruta entera se apaga en cuanto arranca
+         el pelado —pintaría sobre el fondo—, así que a partir de ahí sólo tenían
+         poros las filas SUELTAS: la cáscara quedaba granulada arriba de la línea
+         de pelado y perfectamente lisa abajo, con el corte en la misma latitud
+         donde estaba el escalón de tono. Dos defectos distintos dibujando la
+         misma raya. Acá se acumulan los de la parte que sigue pegada, con el
+         mismo criterio y el mismo tamaño: el granulado cruza la línea de pelado
+         sin enterarse de que existe. */
+      if(R>60) for(let i=cut;i<merRows;i++){
+        if(MD[i]<=0.02) continue;
+        const a0=MU[i]  *(s0+(s1-s0)*(0.5-0.5*MSP[i]))  *m0+ox, b0=-MV[i]*m0+oy;
+        const a1=MU[i]  *(s0+(s1-s0)*(0.5+0.5*MSP[i]))  *m1+ox, b1=-MV[i]*m1+oy;
+        const a2=MU[i+1]*(s0+(s1-s0)*(0.5+0.5*MSP[i+1]))*m1+ox, b2=-MV[i+1]*m1+oy;
+        const a3=MU[i+1]*(s0+(s1-s0)*(0.5-0.5*MSP[i+1]))*m0+ox, b3=-MV[i+1]*m0+oy;
+        const q=Math.hypot(a3-a0,b3-b0)*0.13;
+        if(q<=0.45) continue;
+        for(let k=0;k<3;k++){
+          const h1=Math.sin(i*2.39+k*2.09+s*1.7), h2=Math.sin(i*4.11+k*1.31+s*0.7);
+          const uu=0.5+0.30*h1, vv=0.5+0.34*h2;
+          pore.push(lerp(a0+(a1-a0)*uu, a3+(a2-a3)*uu, vv),
+                    lerp(b0+(b1-b0)*uu, b3+(b2-b3)*uu, vv),
+                    q*(0.68+0.52*(h1*0.5+0.5)));
+        }
+      }
     }
 
     /* 2. lo suelto: fila por fila, con sombreado plano. Acá el degradado
        esférico ya no sirve —la tira dejó de estar sobre la esfera— y es
        justamente donde el volumen tiene que salir de la luz. Si la fila muestra
-       su cara de adentro, se pinta el albedo. */
+       su cara de adentro, se pinta el albedo.
+
+       PERO no de golpe. Ése era el defecto más visible del clímax: la fruta
+       pasaba de estar redonda a estar pelándose con un ESCALÓN DE TONO recto
+       cruzándola, justo en la línea de pelado. La causa es que la misma
+       superficie continua se estaba sombreando con dos modelos distintos — la
+       parte pegada con el degradado esférico, la suelta con la incidencia — y
+       en la frontera los dos no dan el mismo número. Y como la frontera es una
+       latitud, el escalón sale horizontal y perfectamente recto: la línea más
+       artificial que tenía la pieza, en su cuadro más importante.
+       La fila recién soltada TODAVÍA está sobre la esfera, así que ahí el color
+       correcto es el de la esfera. La transición entre los dos modelos se hace
+       en el primer medio radián de piel soltada: se pinta el degradado esférico
+       y encima el sombreado por incidencia con la opacidad que le corresponda a
+       cuánto se despegó. En la línea de pelado eso es exactamente lo pegado; un
+       poco más allá es exactamente la tira suelta; y en el medio no hay ningún
+       borde porque no hay ningún salto. */
+    /* Un radián entero de empalme: con MER_K = 34 son once filas, así que el
+       escalón de opacidad entre dos filas contiguas queda en el 9% y deja de
+       verse. Con medio radián eran seis filas y el bandeo horizontal seguía
+       ahí, más suave pero ahí. */
+    const BLEND=1.0;
     for(let i=0;i<cut;i++){
       const d0=MD[i], d1=MD[i+1];
       const a0=MU[i]  *(s0+(s1-s0)*(0.5-0.5*MSP[i]))  *m0+ox, b0=-MV[i]*m0+oy;
@@ -2346,15 +2940,39 @@ function drawPeelStrips(R,peel,side,ex,gradFill,albedoBase,rindBase){
         const dm=(d0+d1)*0.5, inside=dm<0, dd=inside?-dm:dm;
         ctx.fillStyle=inside?shadeD(albedoBase,0.30+0.70*dd):shadeD(rindBase,dd);
       }
+      const shade=ctx.fillStyle;
+      /* La hendija entre filas.
+         Entre dos filas contiguas el antialias deja medio píxel de fondo, y
+         diez tiras por treinta y cuatro filas son trescientas cuarenta
+         hendijas: la cáscara sale rayada. Esto se resolvía trazando el contorno
+         con el propio relleno, y funcionaba mientras el relleno fuera opaco.
+         Con opacidad parcial deja de funcionar y pasa a ser el problema: el
+         borde recibe el relleno Y el trazo, o sea 1−(1−α)² en vez de α, y esa
+         doble carga sobre una línea de latitud es otra vez una raya horizontal.
+         Sin trazo, entonces. La hendija la tapa el propio cuadrilátero,
+         estirado siete décimas de píxel a lo largo de su eje: se pisa con el de
+         abajo en vez de dejarle sitio al fondo, y como se pisan con el mismo
+         color el solape no se ve. Un dibujo por fila en vez de dos. */
+      const dx=a3-a0, dy=b3-b0, dl=Math.hypot(dx,dy)||1;
+      const ex2=dx/dl*0.7, ey2=dy/dl*0.7;
       ctx.beginPath();
-      ctx.moveTo(a0,b0);ctx.lineTo(a1,b1);ctx.lineTo(a2,b2);ctx.lineTo(a3,b3);
-      /* Se cierra Y se traza con el propio relleno. Entre dos filas contiguas
-         el antialias deja una hendija de fondo de medio píxel, y diez tiras por
-         veintidós filas son doscientas veinte hendijas: la cáscara sale rayada.
-         El trazo del mismo color las cubre sin agregar un solo dibujo más. */
+      ctx.moveTo(a0,b0);ctx.lineTo(a1,b1);
+      ctx.lineTo(a2+ex2,b2+ey2);ctx.lineTo(a3+ex2,b3+ey2);
       ctx.closePath();
-      ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=1;
-      ctx.fill();ctx.stroke();
+      // Cuánta piel soltó esta fila, en radianes de esfera y normalizada al
+      // tramo de empalme. Cero en la línea de pelado, uno más allá.
+      const rel=(thP-(i+0.5)/MER_K*Math.PI)/BLEND;
+      if(rel<0.995){
+        ctx.fillStyle=gradFill;
+        ctx.fill();
+        ctx.globalAlpha=alphaNow*smooth(rel<0?0:rel);
+        ctx.fillStyle=shade;
+        ctx.fill();
+        ctx.globalAlpha=alphaNow;
+      }else{
+        ctx.fillStyle=shade;
+        ctx.fill();
+      }
       /* Un hoyuelo por fila sobre la cara de AFUERA, acumulado para dibujarlo
          después en dos trazadas. La cáscara suelta se quedaba sin poros: el
          puntilleo de la fruta entera se apaga en cuanto el pelado arranca
@@ -2422,26 +3040,90 @@ function drawPeelStrips(R,peel,side,ex,gradFill,albedoBase,rindBase){
   }
 }
 
+/* ============ compás del clímax ============
+   Las seis rampas se solapaban o iban pegadas, una detrás de la otra sin un
+   solo respiro: la fruta llegaba mientras todavía se estaba pelando, los gajos
+   empezaban a abrirse en el mismo cuadro en que terminaban de separarse. Eso no
+   es una secuencia, es un solo movimiento largo.
+   El silencio entre dos notas es parte de la música. Cada evento ahora TERMINA,
+   se queda un momento, y recién entonces empieza el siguiente. Los huecos son
+   cortos —entre 0.004 y 0.008 de pe— pero son lo que convierte una rampa
+   continua en cinco momentos que se pueden mirar de a uno.
+   El presupuesto total no cambió: 0.812 a 0.950, con el corte del bucle en
+   0.95. Lo que se les sacó a las rampas es exactamente lo que ocupan las
+   pausas. */
+const IN_ENTER=[0.812,0.018];   // la fruta llega y se planta   → pausa hasta 0.836
+const IN_PEEL =[0.836,0.026];   // la cáscara se abre           → pausa hasta 0.867
+const IN_EXIT =[0.862,0.012];   // y se va, mientras aparece el albedo
+/* EL GIRO. Éste es el movimiento que faltaba, y su ausencia era el corte más
+   feo de la pieza: de un cuadro al otro la fruta pasaba de ser una ESFERA VISTA
+   DE COSTADO —con la cáscara meridiana y el albedo envolviéndola— a ser una
+   SECCIÓN TRANSVERSAL, un rosetón de carpelos visto desde el eje. Dos
+   proyecciones distintas empalmadas por opacidad no se leen como una cosa que
+   se abre: se leen como dos dibujos superpuestos, y encima el segundo entraba
+   más chico.
+   No hace falta inventar nada para arreglarlo, porque la relación entre esas
+   dos vistas es una rotación de 90° sobre el eje horizontal, y eso se puede
+   dibujar. Un punto de la fruta a latitud θ y azimut ψ es
+       (sen θ·sen ψ, cos θ, sen θ·cos ψ)
+   y girándolo α sobre x y proyectando ortográficamente queda
+       x = sen θ·sen ψ        y = cos θ·cos α − sen θ·cos ψ·sen α
+   Con α = 0 eso es exactamente la elipse meridiana que ya se dibujaba de
+   perfil; con α = π/2 es exactamente el radio del rosetón. La transición entre
+   las dos vistas no es una mezcla: es el camino que hay entre ellas. */
+const IN_TURN =[0.866,0.018];   // la fruta gira y muestra el corte → pausa 0.888
+/* El albedo se abre. Duraba 0.012 —la mitad que cualquier otro movimiento de
+   la fase— y encima era un agujero circular que crecía desde el centro, o sea
+   que descubría los diez carpelos ENTEROS Y A LA VEZ. Eso no es abrirse: eso es
+   un telón que sube, y por eso se leía como un corte de un cuadro al otro por
+   más que técnicamente hubiera una rampa.
+   Ahora dura el doble y se abre POR LOS TABIQUES, que es por donde la fruta ya
+   venía dividida y por donde se abre una de verdad. */
+const IN_BARE =[0.886,0.024];   // el albedo se rasga           → pausa hasta 0.916
+const IN_FAN  =[0.916,0.020];   // los carpelos se separan      → pausa hasta 0.936
+const IN_OPEN =[0.936,0.008];   // se abre el elegido
+const IN_REL  =[0.942,0.008];   // y suelta la semilla, que abre la vuelta siguiente
+const ramp=(pe,r)=>clamp((pe-r[0])/r[1]);
+
 function drawInterior(pe,t){
-  const enter  = clamp((pe-0.812)/0.030);
+  const enter  = ramp(pe,IN_ENTER);
   if(enter<=0) return 0;
-  const peel   = clamp((pe-0.838)/0.038);
+  const peel   = ramp(pe,IN_PEEL);
   /* Entre que la cáscara terminó de salir y que los gajos se abren en hilera
      hay un momento que antes no existía: la fruta pelada, entera, envuelta en
      su albedo. Es el que hace legible la separación que viene después —sin él
      los carpelos aparecen de la nada— y es literalmente lo que se ve cuando
      uno termina de pelar una naranja y todavía no la abrió. */
-  const bare   = clamp((pe-0.874)/0.016);
-  const fan    = clamp((pe-0.890)/0.032);
-  const open   = clamp((pe-0.918)/0.026);
-  const release= clamp((pe-0.938)/0.012);
+  /* `turn` es el ángulo del giro, normalizado. Va con `smooth` porque una
+     rotación que arranca y frena de golpe se lee mecánica, y con un pelín de
+     inercia al final —el último 8% se hace con `smooth` de nuevo— para que la
+     fruta llegue de frente y se quede, en vez de clavarse. */
+  const turn   = smooth(ramp(pe,IN_TURN));
+  const bare   = ramp(pe,IN_BARE);
+  const fan    = ramp(pe,IN_FAN);
+  const open   = ramp(pe,IN_OPEN);
+  const release= ramp(pe,IN_REL);
+  /* Cuánto se retiró la lámina. Es el complemento exacto del factor con el que
+     `frame` apaga la fase interior, así que lo que se va de acá es lo que entra
+     de cielo por detrás, sin que en ningún cuadro la suma dé otra cosa que uno.
+     La semilla que viaja NO lleva este factor: es lo único que sobrevive al
+     corte, y sobrevivir al corte es su trabajo. */
+  const vis=1-clamp((pe-0.930)/0.020);
 
   const proj=PROJECTS[chosenFruit];
   const src=fruitScreen[chosenFruit]||{x:W/2,y:H*0.4,r:26};
   const R0=Math.min(W,H)*0.30;
 
   // la fruta viaja del árbol al centro y crece
-  const e=smooth(enter);
+  /* La fruta llega y FRENA. Con smoothstep se posa como una pluma, sin peso:
+     algo que viaja y se detiene se pasa un poco y vuelve, y ese sobrepaso
+     mínimo es todo lo que hace falta para que se sienta que pesa.
+     Va sólo en posición y tamaño. `growOut` supera el 1 antes de asentar, y en
+     un alpha eso es un valor inválido que el canvas descarta callado —el
+     viñeteado se quedaría con la opacidad del frame anterior—, así que la
+     opacidad sigue con la curva monótona. */
+  const e=growOut(enter);
+  const eA=smooth(enter);
   const cx=lerp(src.x,W/2,e), cy=lerp(src.y,H*0.47,e);
   const R=lerp(src.r,R0,e);
 
@@ -2449,18 +3131,33 @@ function drawInterior(pe,t){
 
   /* Fondo de lámina. El relleno plano de `sky.b` no es un fondo: es la ausencia
      de uno, y por eso el corte flota sobre un color en vez de apoyarse en algo.
-     Un poco de luz sobre el centro y caída hacia los bordes alcanza. */
+     El degradado ya estaba, pero con radio `0.72·max(W,H)` la caída oscura
+     recién empezaba a 475 px del centro: medido sobre el frame, el fondo daba
+     218, 219 y 220 en el cenit, el horizonte y el pie — el mismo valor en todas
+     partes. Un fondo que mide lo mismo en todos lados no es un fondo.
+     Ciñendo el radio y separando los extremos, el frame recupera las dos puntas
+     que le faltaban: una nota clara detrás del sujeto y un apoyo oscuro en los
+     bordes, que además es lo que empuja el ojo hacia el centro. */
   if(e>0.01){
-    const vg=ctx.createRadialGradient(W/2,H*0.45,0,W/2,H*0.45,Math.max(W,H)*0.72);
-    vg.addColorStop(0,'rgba(255,246,226,.11)');
-    vg.addColorStop(0.55,'rgba(255,246,226,0)');
-    vg.addColorStop(1,'rgba(18,24,32,.26)');
-    ctx.globalAlpha=e;ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;
+    const vg=ctx.createRadialGradient(W/2,H*0.45,0,W/2,H*0.45,Math.max(W,H)*0.58);
+    vg.addColorStop(0,'rgba(255,246,226,.17)');
+    vg.addColorStop(0.40,'rgba(255,246,226,0)');
+    vg.addColorStop(1,'rgba(18,24,32,.44)');
+    ctx.globalAlpha=eA*vis;ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;
   }
 
   ctx.save();
   ctx.translate(cx,cy);
-  ctx.rotate((1-e)*0.9 + Math.sin(t*0.35)*0.02*e);
+  /* El clímax se congelaba. Medido con el scroll quieto: a p=0.55 cambiaba el
+     2.8–13.3% de las muestras cada 700 ms, y acá caía a 0.7–2.5% con un delta
+     máximo de 15 sobre 255 — imperceptible. Y es justo donde el espectador se
+     queda mirando.
+     Una sola senoide no alcanza: lee como metrónomo. Dos frecuencias que no son
+     múltiplo una de la otra no vuelven nunca a la misma fase, y eso es lo que
+     hace que parezca que algo está vivo en vez de que algo oscila. La deriva
+     vertical es más lenta todavía, para que el conjunto flote. */
+  ctx.rotate((1-e)*0.9 + (Math.sin(t*0.35)*0.026+Math.sin(t*0.83+1.7)*0.011)*e);
+  ctx.translate(0, (Math.sin(t*0.23)*3.4+Math.sin(t*0.61+0.9)*1.5)*e);
 
   /* A partir de acá la fruta ya no está en la escena: viaja hacia el
      espectador y se lee como lámina anatómica. Se conserva la DIRECCIÓN de la
@@ -2500,9 +3197,21 @@ function drawInterior(pe,t){
   const cScar    =shadeD('#CDBE9C',0.72);
   const cScarIn  =shadeD('#9C8A62',0.5);
 
-  const RG=R*0.78;
+  /* El rosetón tiene que llenar EXACTAMENTE el mismo disco que el albedo que se
+     abre para mostrarlo. Con 0.78 contra 0.93 la fruta perdía un 16% de radio
+     en el mismo cuadro en que se abría, y ese salto de tamaño es la mitad de lo
+     que rompía la ilusión: la otra mitad era el cambio de proyección, que ahora
+     lo resuelve el giro. `RA` se define más abajo con el mismo 0.93. */
+  const RG=R*0.93*0.99;
   const shown=proj.gajos.length;
-  const f=petalOut(fan);
+  /* La separación de los carpelos iba con `petalOut`, que es `backOut` con
+     sobrepaso 1.4: un rebote elástico del 40%. Eso está bien para una corola que
+     se abre de golpe, y mal para once piezas pesadas que se separan — el
+     sobrepaso las hacía salir disparadas, pasarse y volver, todas juntas.
+     Ahora es un `ease` cúbico —arranca rápido y frena— y cada gajo sale con su
+     propio retardo, de afuera hacia adentro. */
+  const f=ease(fan);
+  const tSin=Math.sin(turn*1.5708);
   // Media apertura del sector, menos la membrana. Con esto los carpelos TILEAN
   // el disco: una naranja en corte no tiene huecos de fondo entre gajos.
   const HALF=Math.PI/GAJOS_TOTAL-0.006;
@@ -2516,10 +3225,15 @@ function drawInterior(pe,t){
      El degradado esférico se construye una sola vez para las diez —era una
      llamada a createRadialGradient POR SECTOR, ocho por frame, con los mismos
      seis argumentos siempre. */
-  const gRind=ctx.createRadialGradient(LIGHT.x*R*0.40,LIGHT.y*R*0.40,R*0.06,0,0,R*1.14);
-  gRind.addColorStop(0,shadeD(mixH(rind,'#FFFFFF',0.14),0.99));
-  gRind.addColorStop(0.52,shadeD(rind,0.72));
-  gRind.addColorStop(1,shadeD(mixH(rind,'#8A3E06',0.34),0.30));
+  /* Los MISMOS seis números que usa `sphere()` para el fruto en la rama. No es
+     prolijidad: la naranja que viaja es la que estaba en el árbol, y con dos
+     degradados distintos el material cambiaba en el cuadro exacto en que
+     arranca el viaje. Se veía como un corte aunque la posición fuera continua,
+     porque lo que el ojo sigue no es la posición, es la superficie. */
+  const gRind=ctx.createRadialGradient(LIGHT.x*R*0.45,LIGHT.y*R*0.45,R*0.05,0,0,R*1.18);
+  gRind.addColorStop(0,shadeD(rind,0.99));
+  gRind.addColorStop(0.5,shadeD(rind,0.64));
+  gRind.addColorStop(1,shadeD(rind,0.06));
   /* La cáscara se va SALIENDO DE CUADRO, no bajando el alpha, y esto no es una
      preferencia: una tira de cáscara se pisa a sí misma —cada fila comparte
      borde con la siguiente y las de adelante tapan a las de atrás— así que en
@@ -2528,7 +3242,7 @@ function drawInterior(pe,t){
      momento en que uno la está mirando. Empujarla hacia afuera la saca del
      encuadre sin volverla nunca translúcida; el alpha sólo entra al final,
      cuando ya está fuera y no queda nada que rayar. */
-  const peelEx=smooth(clamp((pe-0.876)/0.014));
+  const peelEx=smooth(ramp(pe,IN_EXIT));
   const peelFade=1-clamp((peelEx-0.70)/0.30);
   if(peelFade>0.004){
     ctx.globalAlpha=peelFade;
@@ -2549,11 +3263,22 @@ function drawInterior(pe,t){
   /* ---------- 1. la pulpa, siempre opaca ----------
      Antes se revelaba subiendo el alpha, y durante todo el pelado los carpelos
      quedaban al 42% sobre fondo oscuro: por eso se veían marrones y barrosos.
-     Ahora se revelan por OCLUSIÓN — la cáscara los tapa hasta que se abre. */
+     Ahora se revelan por OCLUSIÓN — la cáscara los tapa hasta que se abre.
+
+     Y el rosetón entero va dentro del giro. Un punto del plano ecuatorial a
+     radio r y azimut ψ es (r·sen ψ, 0, r·cos ψ); girado α sobre el eje
+     horizontal y proyectado queda (r·sen ψ, −r·cos ψ·sen α). O sea: el disco
+     completo, escalado en y por sen α. Con α = 0 colapsa a una línea —la fruta
+     está de perfil y la sección no se ve— y con α = π/2 es el rosetón de
+     frente. Una sola línea de transformación hace todo el giro, porque la
+     geometría ya lo tenía resuelto. */
+  if(tSin>=0.004){
+  ctx.save();
+  ctx.scale(1,tSin);
   for(let i=0;i<GAJOS_TOTAL;i++){
     const named=i<shown;
     const aRose=(i/GAJOS_TOTAL)*6.283-1.5708+0.31;
-    let px=0,py=0,ang=aRose,L=RG,det=0,alpha=1,sc=1;
+    let px=0,py=0,ang=aRose,L=RG,det=0,alpha=vis,sc=1;
     if(named&&fan>0){
       /* Del rosetón a una hilera sobre la lámina. Antes el abanico apuntaba
          todo hacia arriba y dejaba media pantalla vacía. */
@@ -2567,15 +3292,28 @@ function drawInterior(pe,t){
          que tilear el disco exacto, y ahí cualquier diferencia abre huecos. */
       const h=Math.sin((i+1)*78.233)*43758.5453, j=h-Math.floor(h);
       const h2=Math.sin((i+1)*12.9898+4.1)*43758.5453, j2=h2-Math.floor(h2);
-      const rowX=k*W*0.32+(j-0.5)*W*0.012;
+      /* Cada gajo con su propio retardo, de afuera hacia adentro. Los once
+         salían exactamente en el mismo cuadro y llegaban en el mismo cuadro, y
+         eso —más que la curva— es lo que hacía que la separación se leyera
+         mecánica: una fruta que se abre no libera todas sus piezas a la vez.
+         Los de los extremos arrancan primero porque son los que más lejos
+         tienen que ir, así que además llegan todos juntos. */
+      const lead=(1-Math.abs(k))*0.20;
+      const fi=ease(clamp((fan-lead*0.5)/(1-lead*0.5)));
+      const rowX=k*W*0.345+(j-0.5)*W*0.012;
       const rowY=R0*0.26+Math.abs(k)*R0*0.09+(j2-0.5)*R0*0.075;
-      px=lerp(0,rowX,f); py=lerp(0,rowY,f);
-      ang=lerp(aRose,-1.5708+k*0.42+(j2-0.5)*0.22,f);
-      L=lerp(RG,RG*0.70*(0.88+0.24*j),f); det=f;
+      px=lerp(0,rowX,fi); py=lerp(0,rowY,fi);
+      ang=lerp(aRose,-1.5708+k*0.42+(j2-0.5)*0.22,fi);
+      /* El gajo perdía un 30% de largo entre el rosetón y la hilera, y esa
+         pérdida de masa en el mismo movimiento en que se separa es la que hacía
+         que la hilera se viera chiquita y desangelada después de una fruta que
+         llenaba la pantalla. Ahora conserva el 88%: lo justo para que cinco
+         entren en el ancho sin pisarse. */
+      L=lerp(RG,RG*0.88*(0.90+0.20*j),fi); det=fi;
     } else if(!named){
       // Los que no llevan nombre se van rápido: si tardan, el rosetón queda
       // pisándose con la hilera y todo se lee como un revoltijo.
-      alpha=1-clamp(fan*2.4);
+      alpha=vis*(1-clamp(fan*2.4));
     }
     const sel=named&&i===chosenGajo;
     if(named&&open>0){
@@ -2666,22 +3404,39 @@ function drawInterior(pe,t){
       for(let k=0;k<seeds.length;k++){
         const so=clamp((open-0.15-k*0.10)/0.4);
         if(so<=0) continue;
-        const lift=k===0?release:0;
         const su=0.42+k*0.24;
         const sx=carpelX(su,L,HALF,det);
         const sy=carpelC(su,L,det)+(k?1:-1)*carpelW(su,L,HALF,det)*0.20;
         const ss=L*0.115;
-        ctx.globalAlpha=so*(k===0?1:1-release);
         ctx.save();
-        ctx.translate(sx-lift*R*1.6*Math.cos(ang+1.5708),sy-lift*R*1.6);
+        ctx.translate(sx,sy);
+        /* La primera semilla es LA semilla: la que se suelta y abre la vuelta
+           siguiente. Su pose se publica acá en coordenadas de pantalla —leída
+           de la matriz del canvas, que ya trae encima el giro, la deriva, la
+           rotación del carpelo y su escala— porque el viaje que viene después
+           tiene que terminar en un punto exacto del ENCUADRE, no del carpelo.
+           Componer a mano seis transformaciones para llegar al mismo número
+           sería escribir dos veces lo que el contexto ya sabe. */
+        if(k===0){
+          const M=ctx.getTransform();
+          seedOut={x:M.e/DPR, y:M.f/DPR,
+                   s:ss*Math.hypot(M.a,M.b)/DPR,
+                   rot:Math.atan2(M.b,M.a)+1.0708};
+        }
+        // Ya soltada, se dibuja afuera de todo esto y no acá.
+        if(k===0&&release>0.001){ ctx.restore(); continue; }
         // El eje largo de la semilla acompaña al del carpelo.
-        ctx.rotate(1.0708+lift*7);
-        // Hueco donde está embebida, antes de la semilla.
-        ctx.globalAlpha*=0.5;ctx.fillStyle=cSeedPit;
-        ctx.beginPath();ctx.ellipse(ss*0.12,ss*0.14,ss*0.72,ss*1.06,0,0,6.283);ctx.fill();
-        ctx.globalAlpha=so*(k===0?1:1-release);
-        // La misma semilla que cae y que germina, sin excepción.
-        seedDraw(ss,cSeed,cSeedLine);
+        ctx.rotate(1.0708);
+        ctx.globalAlpha=vis*so*(k===0?1:1-release);
+        // Hueco donde está embebida, antes de la semilla. Se abre con ella.
+        const pit=ctx.globalAlpha*0.5*so;
+        ctx.globalAlpha=pit;ctx.fillStyle=cSeedPit;
+        ctx.beginPath();
+        ctx.ellipse(ss*0.12,ss*0.14,ss*0.72*so,ss*1.06*so,0,0,6.283);ctx.fill();
+        ctx.globalAlpha=vis*so*(k===0?1:1-release);
+        // La misma semilla que cae y que germina, sin excepción — y ahora se
+        // TRAZA en vez de encenderse.
+        seedDraw(ss,cSeed,cSeedLine,so);
         ctx.restore();
         ctx.globalAlpha=1;
       }
@@ -2691,9 +3446,9 @@ function drawInterior(pe,t){
 
   /* ---------- 2. el eje central ----------
      Los carpelos cuelgan de un eje fibroso. Sin él convergen a un punto y el
-     corte se lee como gráfico de torta. */
-  if(peel>0.04&&fan<0.4){
-    ctx.globalAlpha=clamp((peel-0.04)/0.18)*(1-clamp(fan*2.5));
+     corte se lee como gráfico de torta. Va dentro del mismo giro que ellos. */
+  if(fan<0.4){
+    ctx.globalAlpha=(1-clamp(fan*2.5));
     if(ctx.globalAlpha>0.004){
       ctx.fillStyle=cCore;
       ctx.beginPath();ctx.arc(0,0,RG*0.10,0,6.283);ctx.fill();
@@ -2707,6 +3462,8 @@ function drawInterior(pe,t){
       ctx.stroke();
     }
     ctx.globalAlpha=1;
+  }
+  ctx.restore();
   }
 
   /* ---------- 3. la fruta pelada: el albedo ----------
@@ -2735,8 +3492,43 @@ function drawInterior(pe,t){
      superpuestos, no como una cosa que se abre. Con el agujero, en cambio,
      todo lo que se ve está a plena opacidad en todo momento, y el movimiento
      —del centro hacia afuera— es el mismo que ya trae el rosetón. */
-  const rHole=RA*smooth(bare)*1.04;
-  if(albedoA>0.004&&rHole<RA){
+  /* ---- por dónde se rasga ----
+     Era `rHole = RA · smooth(bare)`, un círculo creciendo desde el centro: el
+     albedo se levantaba como un telón y los diez carpelos aparecían enteros y
+     al mismo tiempo. Con rampa o sin rampa, eso se lee como un cambio de cuadro,
+     porque nada en el dibujo dice POR DÓNDE se está abriendo.
+     Una naranja pelada se abre por los tabiques. Así que el borde del agujero
+     deja de ser un círculo y pasa a tener diez lóbulos: la rasgadura corre
+     primero por cada tabique —que es donde el albedo es más fino— y recién
+     después se come el centro de cada sector. Y cada sector arranca en su
+     momento, con un retardo sacado de su propio hash: si los diez se rasgan
+     juntos, los lóbulos se leen como un engranaje. */
+  const HOLE=new Float32Array(GAJOS_TOTAL);
+  for(let m=0;m<GAJOS_TOTAL;m++){
+    const h=Math.sin((m+1)*45.164)*43758.5453, lag=(h-Math.floor(h))*0.34;
+    HOLE[m]=smooth(clamp((bare-lag)/(1-lag)));
+  }
+  let holeMax=0; for(let m=0;m<GAJOS_TOTAL;m++) if(HOLE[m]>holeMax) holeMax=HOLE[m];
+  const rHole=RA*holeMax*1.06;
+  /* El contorno del desgarro, muestreado. Se usa dos veces —para restar el
+     agujero del anillo de albedo y para trazar su canto— así que se construye
+     una vez acá y no dos veces mal. Va en sentido HORARIO porque tiene que
+     restar del círculo exterior, que va antihorario. */
+  const holePath=(g,scale)=>{
+    const NH=GAJOS_TOTAL*7;
+    for(let q=NH;q>=0;q--){
+      const t=q/NH*GAJOS_TOTAL, m=Math.floor(t)%GAJOS_TOTAL, fr=t-Math.floor(t);
+      /* Dentro del sector, la rasgadura va más adelantada sobre los tabiques
+         —los bordes— que sobre el medio. Eso es el lóbulo, y es lo que hace
+         visible que se abre por donde la fruta ya venía dividida. */
+      const lob=0.76+0.24*Math.abs(Math.cos(fr*Math.PI));
+      const rr=lerp(HOLE[m],HOLE[(m+1)%GAJOS_TOTAL],fr)*RA*1.06*lob*scale;
+      const a=(t/GAJOS_TOTAL)*6.283-1.5708+0.31;
+      const x=Math.cos(a)*rr, y=Math.sin(a)*rr;
+      if(q===NH) g.moveTo(x,y); else g.lineTo(x,y);
+    }
+  };
+  if(albedoA>0.004&&holeMax<0.999){
     ctx.globalAlpha=albedoA;
     const gAl=ctx.createRadialGradient(LIGHT.x*RA*0.34,LIGHT.y*RA*0.34,RA*0.04,0,0,RA*1.06);
     gAl.addColorStop(0,shadeD(mixH(cAlbedo,'#FFFFFF',0.30),0.98));
@@ -2751,20 +3543,49 @@ function drawInterior(pe,t){
        queda entero tapando la fruta hasta el final. */
     ctx.beginPath();
     ctx.arc(0,0,RA,0,6.283);
-    if(rHole>0){ ctx.moveTo(rHole,0); ctx.arc(0,0,rHole,0,6.283,true); }
+    if(rHole>0.4) holePath(ctx,1);
     ctx.fill();
     ctx.save();ctx.clip();
-    /* Los tabiques. Un meridiano de azimut ψ se proyecta de costado como una
-       elipse de semieje horizontal R·|sen ψ| y vertical R: recto se ve sólo el
-       que está de canto. Con diez tabiques y esta proyección hay únicamente
-       DOS elipses distintas más una recta —cada elipse dibuja el tabique de
-       adelante y el de atrás a la vez— así que son tres trazos, no diez. */
-    ctx.strokeStyle=rgba(shadeD(mixH(cAlbedo,'#A8977A',0.55),0.52),0.30);
-    ctx.lineWidth=Math.max(0.7,R*0.005);
-    ctx.beginPath();ctx.moveTo(0,-RA);ctx.lineTo(0,RA);ctx.stroke();
-    for(let i=1;i<GAJOS_TOTAL/2-1;i++){
+    /* ---- los tabiques, y el giro ----
+       Un meridiano de azimut ψ, visto de costado, es una elipse de semieje
+       horizontal R·|sen ψ| y vertical R. Eso era lo que se dibujaba, y estaba
+       bien mientras la fruta se quedara de perfil.
+       Ahora gira, así que el tabique se calcula punto por punto con la rotación
+       de arriba: a latitud θ y azimut ψ, girado α sobre el eje horizontal,
+
+           x = R·sen θ·sen ψ
+           y = R·(cos θ·cos α − sen θ·cos ψ·sen α)
+           z = R·(cos θ·sen α + sen θ·cos ψ·cos α)
+
+       y sólo se traza el trozo con z > 0, que es el que da a la cámara. Ésa es
+       la parte que hace el trabajo: al girar, el tabique de atrás se esconde y
+       el de adelante barre hacia el frente, y lo que en α = 0 eran tres elipses
+       concéntricas termina en α = π/2 siendo los DIEZ RADIOS del rosetón —
+       exactamente los mismos que separan los carpelos que hay debajo.
+       Cuando el albedo se abre, la fruta ya está girada y las divisiones ya
+       coinciden. No queda nada que empalmar. */
+    /* Marcados, no insinuados. Con alpha 0.30 los tabiques casi no se veían, y
+       como el giro se lee EXCLUSIVAMENTE en ellos —la silueta de una esfera no
+       cambia al girar— el resultado era una bola blanca y lisa quieta en la
+       pantalla durante todo el movimiento. Un movimiento que no se ve no
+       existe. Ahora son surcos, que además es lo que son: los tabiques entre
+       carpelos empujan el albedo desde adentro y se marcan en la superficie. */
+    ctx.strokeStyle=rgba(shadeD(mixH(cAlbedo,'#A8977A',0.62),0.44),0.52);
+    ctx.lineWidth=Math.max(1,R*0.0085);
+    {
+      const ca=Math.cos(turn*1.5708), sa=tSin, K=26;
       ctx.beginPath();
-      ctx.ellipse(0,0,Math.sin(i*Math.PI/(GAJOS_TOTAL/2))*RA,RA,0,0,6.283);
+      for(let m=0;m<GAJOS_TOTAL;m++){
+        const psi=m*6.283/GAJOS_TOTAL-1.5708+0.31;
+        const cp=Math.cos(psi), sp2=Math.sin(psi);
+        let pen=false;
+        for(let i=0;i<=K;i++){
+          const th=i/K*Math.PI, st=Math.sin(th), ct=Math.cos(th);
+          if(ct*sa+st*cp*ca<=0){ pen=false; continue; }   // cara de atrás
+          const x=RA*st*sp2, y=RA*(ct*ca-st*cp*sa);
+          if(pen) ctx.lineTo(x,y); else { ctx.moveTo(x,y); pen=true; }
+        }
+      }
       ctx.stroke();
     }
     // Textura esponjosa: el albedo no brilla, se apelmaza.
@@ -2782,7 +3603,13 @@ function drawInterior(pe,t){
       ctx.globalAlpha=albedoA*0.7;
       ctx.strokeStyle=shadeD(mixH(cAlbedo,'#FFFFFF',0.45),0.95);
       ctx.lineWidth=Math.max(1,R*0.011);
-      ctx.beginPath();ctx.arc(0,0,rHole,0,6.283);ctx.stroke();
+      ctx.beginPath();holePath(ctx,1);ctx.stroke();
+      /* Una segunda línea apenas por dentro, más tenue: el albedo tiene
+         espesor, así que su canto roto no es un filo sino una franja. Sin ella
+         el borde del desgarro es la única línea perfecta de la fase. */
+      ctx.globalAlpha=albedoA*0.28;
+      ctx.lineWidth=Math.max(1,R*0.022);
+      ctx.beginPath();holePath(ctx,0.955);ctx.stroke();
     }
     ctx.globalAlpha=1;
   }
@@ -2816,19 +3643,60 @@ function drawInterior(pe,t){
   }
   ctx.restore();
 
+  /* ---------- la semilla que se va, y que es la que vuelve ----------
+     Acá cierra el bucle, y es el único movimiento de la pieza que tiene que ser
+     EXACTO en vez de creíble.
+     El final era un destello blanco: la lámina se iba a blanco, el corte pasaba
+     tapado y del otro lado empezaba otra semilla cayendo desde el borde de
+     arriba. Funcionaba como transición y fallaba como argumento — la pieza dice
+     que es la misma semilla la que vuelve, y taparla en el momento exacto en
+     que tendría que verse volviendo es decir lo contrario.
+     Ahora viaja. Sale del gajo en la pose que tenía dentro del carpelo y
+     aterriza en la de `SEED_IN`: centro del encuadre, semilongitud 13 escalada
+     por la cámara de apertura, y −0.2 rad. En pe = 0.95 esos tres números son,
+     por construcción, los que `drawFallingSeed` usa en su primer cuadro. No hay
+     empalme: es el mismo dibujo, calculado por dos caminos que dan lo mismo.
+     Va FUERA de la rotación general y en coordenadas de pantalla, porque su
+     destino es un punto del cuadro y no un punto de la fruta. Y va sin `vis`:
+     todo lo demás se retira, ella no. */
+  if(release>0.001&&seedOut){
+    const r=smooth(release);
+    const camS0=keyC(CAM_S,0);
+    // El camino corto entre los dos ángulos. Interpolando el largo, la semilla
+    // pega un giro entero de más justo cuando el ojo la está siguiendo.
+    let dr=SEED_IN.rot-seedOut.rot;
+    while(dr>Math.PI) dr-=6.2832;
+    while(dr<-Math.PI) dr+=6.2832;
+    ctx.save();
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    ctx.translate(lerp(seedOut.x,W/2,r),
+      // Un arco corto, no una recta: algo que se suelta describe una parábola.
+      lerp(seedOut.y,H*0.52,r)-Math.sin(r*Math.PI)*R*0.22);
+    ctx.rotate(seedOut.rot+dr*r);
+    seedDraw(lerp(seedOut.s,SEED_IN.s*camS0,r),
+      shadeD(SEED_BASE,0.82),'rgba(90,70,40,.45)',1);
+    ctx.restore();
+  }
+
   // ---------- etiquetas (fuera de la rotación) ----------
   const ink='#20180E';
   if(fan>0.12){
     for(let i=0;i<shown;i++){
       const sel=i===chosenGajo;
       // Escalonadas: aparecen una detrás de otra, no todas de golpe.
-      const a=f*clamp((fan-0.12-i*0.055)/0.34)*(sel?1:1-open*0.85);
+      const a=vis*clamp((fan-0.12-i*0.055)/0.34)*(sel?1:1-open*0.85);
       if(a<=0.004) continue;
-      // La guía nace en la punta del carpelo, que ahora está en su hilera.
+      /* La guía nace en la punta del carpelo, así que TIENE que rehacer la
+         misma cuenta que hizo el carpelo — el mismo reparto, el mismo retardo
+         por gajo y el mismo largo. Cuando los números divergieron, las guías
+         quedaron apuntando a donde los gajos ya no estaban: una lámina rotulada
+         cuyos rótulos señalan al aire es peor que una sin rótulos. */
       const k=(i-(shown-1)/2)/Math.max(1,shown-1);
-      const rowX=k*W*0.32, rowY=R0*0.26+Math.abs(k)*R0*0.09;
+      const lead=(1-Math.abs(k))*0.20;
+      const f=ease(clamp((fan-lead*0.5)/(1-lead*0.5)));
+      const rowX=k*W*0.345, rowY=R0*0.26+Math.abs(k)*R0*0.09;
       const ang=lerp((i/GAJOS_TOTAL)*6.283-1.5708+0.31,-1.5708+k*0.42,f);
-      const L=lerp(RG,RG*0.70,f);
+      const L=lerp(RG,RG*0.88,f);
       const HA=Math.PI/GAJOS_TOTAL-0.006;
       const tL=carpelX(1,L,HA,f);
       const tipX=cx+rowX*f+Math.cos(ang)*tL, tipY=cy+rowY*f+Math.sin(ang)*tL;
@@ -2856,7 +3724,7 @@ function drawInterior(pe,t){
         ctx.stroke();ctx.fillStyle=ink;
         ctx.beginPath();ctx.arc(ax,ay,1.6,0,6.283);ctx.fill();
         ctx.globalAlpha=1;
-        label(proj.gajos[i].name.toUpperCase(),lx+el+(side>0?6:-6),ly,align,11,ink,a*(sel?1:0.55),500);
+        label(proj.gajos[i].name.toUpperCase(),lx+el+(side>0?6:-6),ly,align,12,ink,a*(sel?1:0.7),600);
         continue;
       }
       ctx.moveTo(tipX,tipY-4);
@@ -2867,23 +3735,24 @@ function drawInterior(pe,t){
       ctx.beginPath();ctx.arc(tipX,tipY-4,1.6,0,6.283);ctx.fill();
       ctx.globalAlpha=1;
       const ox=el?el+(align==='left'?6:-6):0;
-      label(proj.gajos[i].name.toUpperCase(),lx+ox,ly,align,11,ink,a*(sel?1:0.55),500);
+      label(proj.gajos[i].name.toUpperCase(),lx+ox,ly,align,12,ink,a*(sel?1:0.7),600);
     }
   }
   // nombre del proyecto
   if(enter>0.25){
-    const a=clamp((enter-0.25)/0.4)*(1-open*0.6);
-    label(proj.name.toUpperCase(),cx,cy-R*1.30,'center',13,ink,a,500);
-    label(proj.meta,cx,cy-R*1.30+20,'center',11,ink,a*0.55,400);
+    const a=vis*clamp((enter-0.25)/0.4)*(1-open*0.6);
+    label(proj.name.toUpperCase(),cx,cy-R*1.30,'center',14,ink,a,600);
+    label(proj.meta,cx,cy-R*1.30+21,'center',12,ink,a*0.68,500);
   }
   // ideas
   if(open>0.2){
     const seeds=PROJECTS[chosenFruit].gajos[chosenGajo].seeds;
     for(let k=0;k<seeds.length;k++){
-      const a=clamp((open-0.2-k*0.12)/0.35)*(k===0?1:1-release);
-      label(IDEAS[seeds[k]],cx,cy+R*(1.16+k*0.17),'center',13,ink,a,500);
+      const a=vis*clamp((open-0.2-k*0.12)/0.35)*(k===0?1:1-release);
+      label(IDEAS[seeds[k]],cx,cy+R*(1.16+k*0.17),'center',14,ink,a,600);
     }
-    label('IDEAS THIS IS MADE OF',cx,cy+R*1.02,'center',10,ink,clamp((open-0.2)/0.3)*0.5,400);
+    label('IDEAS THIS IS MADE OF',cx,cy+R*1.02,'center',11,ink,
+      vis*clamp((open-0.2)/0.3)*0.62,500);
   }
   // devolver la luz de la escena
   LIGHT.amb=sceneAmb; LIGHT.exp=sceneExp; LIGHT.sunA=sceneSun; LIGHT.skyA=sceneSky;
@@ -2905,8 +3774,22 @@ function drawInterior(pe,t){
 
    Las bandas llegan con su `el` desde el componente; el motor no las busca. */
 const bands=(host.bands||[]).map(b=>({el:b.el,from:b.from,to:b.to,vis:-1}));
-let lastStage='',lastNote='',lastAge='',lastDark=null,lastAcc='',lastCue='',lastFrom='';
-function updateDOM(pe,p,orange){
+let lastStage='',lastNote='',lastAge='',lastDark=null,lastAcc='',lastFrom='';
+/* Lo escribe `frame()` mirando el fondo, y lo leen tanto el chrome como las
+   bandas. Arranca en falso porque el primer cuadro del ciclo es de día. */
+let bgDark=false;
+function updateDOM(pe,u,orange){
+  /* Acá se le escribía a cada banda un `data-scheme` sacado de qué tan oscuro
+     estaba REALMENTE el fondo detrás del texto, y con eso la banda viraba entre
+     tinta y hueso a lo largo del ciclo día/noche.
+     Era la respuesta correcta a la pregunta vieja: mientras el texto caía
+     directo sobre el dibujo, la legibilidad no era una propiedad del texto sino
+     de su relación con el fondo, así que la tenía que mandar el fondo. Desde
+     que cada banda vive en una cartela de papel, esa relación ya no existe —
+     entre el texto y el dibujo hay una hoja— y lo único que quedaba del viraje
+     era ver las cartelas cambiar de blanco a negro cada vez que pasa una noche.
+     `bgDark` se sigue calculando: lo necesitan la marca, la navegación y el
+     riel, que no tienen papel debajo y sin virar desaparecerían. */
   for(const b of bands){
     const sp=b.to-b.from,fd=Math.min(0.026,sp*0.32);
     const a=Math.min(smooth(clamp((pe-b.from)/fd)),1-smooth(clamp((pe-(b.to-fd))/fd)));
@@ -2920,9 +3803,10 @@ function updateDOM(pe,p,orange){
   const st=stageAt(pe);
   const al=ageLabel(key(AGE,pe));
   const fromTxt = carried && pe<0.45 ? 'grown from — '+carried : '';   // de que idea nacio este ciclo
-  let c='';
-  if(pe>0.752&&pe<0.818) c=pointerSeen?'Move to choose a fruit':'Tap to choose a fruit';
-  else if(pe>0.888&&pe<0.922) c=pointerSeen?'Move to open a segment':'Tap to open a segment';
+  /* Las dos pistas —"Move to choose a fruit", "Move to open a segment"— se
+     fueron con el puntero. No hay nada que pedirle al lector: la pieza corre
+     sola. Un cartel que invita a hacer algo que no hace nada es peor que no
+     tener cartel. */
 
   /* Un solo aviso por frame con los campos que cambiaron. Emitir el snapshot
      entero siempre obligaria a React a comparar seis strings en cada frame; el
@@ -2931,22 +3815,44 @@ function updateDOM(pe,p,orange){
   if(st.name!==lastStage){lastStage=st.name;(d||(d={})).stage=st.name;}
   if(st.note!==lastNote){lastNote=st.note;(d||(d={})).note=st.note;}
   if(al!==lastAge){lastAge=al;(d||(d={})).age=al;}
-  if(st.dark!==lastDark){lastDark=st.dark;(d||(d={})).dark=st.dark;}
+  if(bgDark!==lastDark){lastDark=bgDark;(d||(d={})).dark=bgDark;}
   if(fromTxt!==lastFrom){lastFrom=fromTxt;(d||(d={})).from=fromTxt;}
-  if(c!==lastCue){lastCue=c;(d||(d={})).cue=c;}
   if(d) onHud(d);
 
   const acc=mixH('#6E9247',PROJECTS[chosenFruit].hue,orange);
   if(acc!==lastAcc){lastAcc=acc;onAccent(acc);}
 
+  /* El riel marca el avance del SCROLL, no el de p: p es no lineal por
+     construcción —esa es toda la gracia del reparto— así que un punto que
+     siguiera a p se movería a saltos mientras la mano va pareja. */
   if(refs.cycleDot&&refs.cycleDot.current)
-    refs.cycleDot.current.style.top=(p*100).toFixed(1)+'%';
+    refs.cycleDot.current.style.top=(u*100).toFixed(1)+'%';
+
+  /* La etiqueta se apaga en el corte y vuelve del otro lado.
+     El dibujo cruza el bucle sin costura —misma semilla, mismo tamaño, mismo
+     cielo— pero el TEXTO no puede: "year 7.8 / ENDOSPERM" y "day 0 / DISPERSAL"
+     son dos cosas distintas y no hay interpolación posible entre ellas. Antes lo
+     tapaba el destello blanco junto con todo lo demás. Ahora que no hay
+     destello, es lo único que sigue necesitando taparse, así que se tapa solo:
+     se desvanece sobre el final de la vuelta y entra sobre el principio de la
+     siguiente. Va por referencia y no por estado de React porque cambia todos
+     los frames de esas dos ventanas. */
+  if(refs.label&&refs.label.current){
+    const lo=Math.min(clamp(pe/0.022),1-clamp((pe-0.928)/0.020));
+    refs.label.current.style.opacity=lo.toFixed(3);
+  }
 }
 
 /* ============ overlay de dev (?debug) ============
    Sin medición no hay optimización. El contexto sólo se instrumenta si el flag
    está puesto: envolver cada método cuesta, y la pieza normal no lo paga. */
 const DEBUG=typeof location!=='undefined'&&/[?&]debug\b/.test(location.search||'');
+/* `?at=0.84` arranca la reproducción en ese p exacto y `?hold` la congela ahí,
+   sin tener que buscar el píxel de scroll a mano. Herramienta de taller: revisar
+   el clímax cuadro por cuadro es lo que más se hace y lo más incómodo de hacer
+   apuntando con la rueda. */
+const AT=typeof location!=='undefined'&&/[?&]at=([\d.]+)/.exec(location.search||'');
+const HOLD=typeof location!=='undefined'&&/[?&]hold\b/.test(location.search||'');
 let dbgCalls=0,dbgShown=0,dbgJs=0,dbgFrame=0,dbgLast=0,dbgN=0;
 const DBG_W={};
 if(DEBUG){
@@ -3003,12 +3909,11 @@ function frame(now){
      reproduciéndose hasta alcanzarte en vez de comerse las fases.
      No se aplica con prefers-reduced-motion: ahí seguir moviéndose después de
      soltar el scroll es exactamente lo que no se quiere. */
-  if(!REDUCED){
+  if(!REDUCED&&!HOLD){
     const cap=PMAX*dt;
     if(dp>cap) dp=cap; else if(dp<-cap) dp=-cap;
   }
-  p+=dp;
-  wrap();
+  if(!HOLD){ p+=dp; wrap(); }
   const pe=fold(p);
 
   const cyc=key([[0.25,0],[0.52,4],[0.70,7],[0.79,10],[0.95,11]],pe,t=>t);
@@ -3025,33 +3930,45 @@ function frame(now){
 
   const camY=keyC(CAM_Y,pe),camS=keyC(CAM_S,pe);
   const sky=skyColors(pe,night);
+  /* Qué tan oscuro está REALMENTE el fondo detrás del texto.
+     Esto lo decidía `STAGES[].dark`, un booleano escrito a mano por fase. El
+     ciclo día/noche es continuo y se calcula aparte, así que ese booleano no
+     sabe de qué color terminó el cielo: con la noche encima, a `Flush cycles`
+     —marcada `dark:false`— le tocaba tinta oscura sobre un cielo oscuro, y el
+     texto desaparecía. Ninguna constante puede saber eso; hay que mirarlo.
+     Las bandas están centradas en vertical, así que lo que tienen detrás es el
+     medio del cielo cuando la cámara está sobre la tierra y el estrato de
+     arriba cuando está por debajo. */
+  {
+    const hhNow=H/2/camS;
+    const skyFrac=clamp((0-(camY-hhNow))/Math.max(1,2*hhNow));
+    const c=hx(mixL(SOIL[0].c,mixL(sky.a,sky.b,0.5),skyFrac));
+    bgDark=(0.2126*c[0]+0.7152*c[1]+0.0722*c[2])/255 < 0.42;
+  }
   const mat=clamp((pe-0.465)/0.12);
   updateLight(pe,sky,night);   // una sola vez por frame; todo lo demás la consulta
   LABEL_HALO=rgba(sky.b,0.82);
   palettes(mat,clamp((pe-0.255)/0.185));
 
-  // ---- elección de fruta (mientras dura la ventana) ----
+  /* La ventana en la que el fruto elegido se distingue del resto. Antes era la
+     ventana de ELECCIÓN y la abría el puntero; ahora sólo señala, que es lo que
+     tiene que pasar igual: el ojo necesita saber cuál de las naranjas es la que
+     va a viajar antes de que empiece a viajar. */
   const picking = pe>0.745 && pe<0.818;
-  if(picking && fruitScreen.length===3){
-    // tercios de pantalla → fruto, ordenados de izquierda a derecha.
-    // Predecible en cualquier viewport, a diferencia de apuntar al más cercano.
-    const order=[0,1,2].sort((a,b)=>fruitScreen[a].x-fruitScreen[b].x);
-    chosenFruit=order[Math.min(2,Math.floor(mouseX*3))];
-  }
-  // ---- elección de gajo ----
-  if(pe>0.888&&pe<0.928){
-    const n=PROJECTS[chosenFruit].gajos.length;
-    chosenGajo=Math.min(n-1,Math.max(0,Math.floor(clamp((mouseX-0.18)/0.64)*n)));
-  }
-  // ---- la idea que se lleva al próximo ciclo ----
-  if(pe>0.944&&pe<0.95){
-    carried=IDEAS[PROJECTS[chosenFruit].gajos[chosenGajo].seeds[0]];
-  }
 
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.fillStyle=sky.b;ctx.fillRect(0,0,W,H);
 
-  const interior = pe>0.812 ? clamp((pe-0.812)/0.030) : 0;
+  /* La fase interior no termina: se retira. El segundo factor la lleva a CERO
+     EXACTO en pe = 0.95, que es donde el bucle corta — y como la cámara de 0.95
+     y la de 0 son el mismo par de números por construcción, lo que queda detrás
+     cuando la lámina se va ya es, literalmente, el encuadre con el que abre la
+     vuelta siguiente: cielo, y nada más, porque con esa cámara el suelo y el
+     árbol quedan fuera de cuadro.
+     Antes acá había un destello blanco que tapaba el corte. Tapar el corte era
+     perder lo único que la pieza quiere decir. */
+  const interior = pe>IN_ENTER[0]
+    ? ramp(pe,IN_ENTER)*(1-clamp((pe-0.930)/0.020)) : 0;
   interiorNow=interior;
 
   if(interior<0.985){
@@ -3080,18 +3997,6 @@ function frame(now){
     ctx.restore();
   }
 
-  // guías de columna: hacen visible que hay una elección que tomar
-  if(picking && interior<0.4){
-    const a=Math.min(clamp((pe-0.747)/0.014),1-clamp((pe-0.804)/0.014))*0.16;
-    if(a>0.004){
-      ctx.globalAlpha=a;ctx.strokeStyle=stageAt(pe).dark?'#F2EDE2':'#17201A';
-      ctx.lineWidth=1;ctx.setLineDash([3,7]);
-      for(let i=1;i<3;i++){
-        ctx.beginPath();ctx.moveTo(W*i/3,H*0.22);ctx.lineTo(W*i/3,H*0.78);ctx.stroke();
-      }
-      ctx.setLineDash([]);ctx.globalAlpha=1;
-    }
-  }
   if(interior>0) drawInterior(pe,t);
 
   drawBloom();
@@ -3126,12 +4031,15 @@ function frame(now){
       ctx.globalAlpha=1;
     }
   }
-  // el destello tapa el corte del bucle
-  const inEnd=p>=LOOP_AT;
-  const fl=inEnd ? (1-clamp((p-LOOP_AT)/0.018)) : clamp((p-0.932)/0.017);
-  if(refs.flash&&refs.flash.current) refs.flash.current.style.opacity=fl.toFixed(3);
+  /* El destello ya no existe. Tapaba el corte del bucle porque el corte se
+     notaba; ahora la semilla que se suelta del gajo ES la que empieza la vuelta
+     siguiente, en la misma posición y al mismo tamaño, así que no hay nada que
+     tapar — y taparlo era justamente perder la única cosa que la pieza quiere
+     decir. Se deja el nodo apagado en vez de sacarlo del árbol: es una línea
+     menos de acoplamiento con React y cero costo. */
+  if(refs.flash&&refs.flash.current) refs.flash.current.style.opacity='0';
 
-  updateDOM(pe,p,orange);
+  updateDOM(pe,pToS(p),orange);
   if(DEBUG){
     if(dbgN%30===0) dbgShown=dbgCalls;      // frame instrumentado: sólo la cuenta
     else dbgJs=performance.now()-dbgT;      // frame limpio: sólo el tiempo
@@ -3144,9 +4052,16 @@ let rt;
 addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(resize,180);});
 resize();buildWorld();dither=buildDither();grit=buildGrit(0);haze=buildGrit(1);
 buildBloom();readScroll();p=target;
+if(AT){ p=target=clamp(parseFloat(AT[1])); pPrev=p; }
 requestAnimationFrame(frame);
 
 return {
+  /* Diagnóstico. La pieza dejó de ser función de `pe` y sólo de `pe`: cuál
+     proyecto se muestra depende de CUÁNTAS VUELTAS lleva, y eso es deliberado
+     —es lo que reemplazó a elegir la fruta con el mouse—. Un invariante que se
+     rompe a propósito hay que poder verificarlo, no sólo afirmarlo, así que el
+     estado de la elección se puede leer desde afuera. No lo usa la página. */
+  state(){ return {fruit:chosenFruit, gajo:chosenGajo, carried}; },
   destroy(){
     alive=false;
     clearTimeout(rt);
