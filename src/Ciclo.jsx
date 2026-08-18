@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createEngine, STAGES } from './engine/engine.js'
+import { createAudio } from './audio/audio.js'
 import { BANDS } from './content/bands.jsx'
 import { Bands } from './components/Bands.jsx'
 import { SpecimenLabel } from './components/SpecimenLabel.jsx'
 import { Brand, Nav, CycleRail } from './components/Chrome.jsx'
 import { ProjectsIndex } from './components/ProjectsIndex.jsx'
+import { Gate, ScrollHint, SoundToggle } from './components/Gate.jsx'
 
 /* El primer pintado tiene que salir ya con la etiqueta puesta. Un estado
    inicial vacio se ve: la pieza abre con "day 0 / DISPERSAL" en blanco y el
@@ -48,8 +50,32 @@ export function Ciclo() {
   const bandEls = useRef([])
 
   const [hud, setHud] = useState(INITIAL_HUD)
+  /* 'gate' la puerta arriba · 'leaving' fundiendose · 'in' la pieza sola.
+     El estado intermedio existe porque desmontar la puerta en el mismo click
+     seria un corte duro, y porque el sonido tiene que arrancar DENTRO de ese
+     click aunque el cartel siga en pantalla medio segundo mas. */
+  const [phase, setPhase] = useState('gate')
+  const [muted, setMuted] = useState(true)
+  const [hinting, setHinting] = useState(true)
 
   const registerBand = useCallback((i, el) => { bandEls.current[i] = el }, [])
+
+  /* El sonido se construye en el montaje pero NO abre un `AudioContext`: eso
+     pasa recien dentro de `enter()`, que sale del click de la puerta. Crear el
+     contexto acá lo dejaria suspendido para siempre — es literalmente lo que la
+     politica de autoplay impide. */
+  const audioRef = useRef(null)
+  if (audioRef.current === null) audioRef.current = createAudio()
+
+  const enter = useCallback(sound => {
+    audioRef.current.enter({ sound })
+    setMuted(!sound)
+    setPhase('leaving')
+  }, [])
+
+  const toggleSound = useCallback(() => {
+    setMuted(m => { audioRef.current.setMuted(!m); return !m })
+  }, [])
 
   useEffect(() => {
     /* Las referencias de los hijos ya estan puestas cuando corre este efecto:
@@ -65,8 +91,13 @@ export function Ciclo() {
          strings por frame para descubrir que no cambio ninguno. */
       onHud: delta => setHud(prev => ({ ...prev, ...delta })),
       onAccent: hex => document.documentElement.style.setProperty('--accent', hex),
+      /* Sin objeto intermedio y sin cierre sobre estado: lo que el motor emite
+         entra derecho al grafo de audio. `sig` ya viene siendo el mismo objeto
+         en todos los frames —lo reusa el motor— asi que esto no aloca nada. */
+      onTick: (p, night, interior, sig) => audioRef.current.tick(p, night, interior, sig),
     })
-    return () => engine.destroy()
+    const audio = audioRef.current
+    return () => { engine.destroy(); audio.destroy() }
   }, [])
 
   const scheme = hud.dark ? 'on-dark' : 'on-light'
@@ -80,6 +111,14 @@ export function Ciclo() {
       <Brand scheme={scheme} />
       <Nav scheme={scheme} />
       <CycleRail scheme={scheme} dotRef={cycleDotRef} />
+
+      {phase !== 'in' && (
+        <Gate onEnter={enter} leaving={phase === 'leaving'} onGone={() => setPhase('in')} />
+      )}
+      {phase === 'in' && <SoundToggle scheme={scheme} muted={muted} onToggle={toggleSound} />}
+      {phase === 'in' && hinting && (
+        <ScrollHint scheme={scheme} onDone={() => setHinting(false)} />
+      )}
 
       <SpecimenLabel
         labelRef={labelRef}

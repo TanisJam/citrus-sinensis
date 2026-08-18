@@ -15,6 +15,11 @@
      host.refs        { flash, cycleDot } — nodos que cambian todos los frames
      host.onHud       (snapshot) => void — solo cuando un campo CAMBIA
      host.onAccent    (hex) => void
+     host.onTick      (pe, night, interior, sig) => void — TODOS los frames
+                    `sig` es {root, shoot, bloom, enter, peel, exit, turn,
+                    bare, fan, rel}: lo que el cuerpo está haciendo, para que el
+                    sonido no tenga que reimplementar las curvas del motor.
+                    ES EL MISMO OBJETO EN TODOS LOS FRAMES — leerlo, no guardarlo.
 
    La division no es estetica: los campos del HUD cambian unas pocas veces por
    scroll, asi que pueden ser estado de React; la opacidad de las bandas y la
@@ -105,6 +110,15 @@ let W=0,H=0,DPR=1;
 const noop=()=>{};
 const onHud    = host.onHud    || noop;
 const onAccent = host.onAccent || noop;
+/* A diferencia de los dos de arriba, éste sale en TODOS los frames. Es la única
+   salida del motor que no pasa por React, y a propósito: del otro lado hay un
+   grafo de Web Audio que se maneja con `setTargetAtTime`, no un árbol que
+   reconciliar. Manda lo que el sonido no puede recalcular por su cuenta —el
+   avance plegado, la noche y la fase interior— y nada más. */
+const onTick   = host.onTick   || noop;
+/* El objeto de señales que viaja al sonido, creado una sola vez. Ver el sitio
+   donde se llena, en el emisor de frame. */
+const sig = {root:0,shoot:0,bloom:0,enter:0,peel:0,exit:0,turn:0,bare:0,fan:0,rel:0};
 const refs     = host.refs     || {};
 
 /* ============ ciclo de vida ============
@@ -2074,6 +2088,10 @@ let scaleNow=1;      // escala de cámara del frame, para el LOD de las hojas
    umbral junta; sin poder leerlo, la rebaja dinámica es un ajuste a ciegas. */
 let dbgLeaves=0, dbgFull=0, dbgFlat=0;
 let interiorNow=0;   // cuánto avanzó la fase interior, para no pagar de más
+/* La noche del frame. La calcula `frame()` y la lee `updateDOM()` para pasarla
+   al sonido: vive acá afuera por la misma razón que `bgDark` —la escribe un
+   punto del bucle y la lee otro que está fuera de su alcance. */
+let nightNow=0;
 /* Pose en pantalla de la semilla que se va a soltar, publicada por el carpelo
    que la contiene y leída por el viaje del final. Vive fuera porque la escribe
    un punto del código que está dentro de seis transformaciones anidadas y la
@@ -4089,6 +4107,37 @@ function updateDOM(pe,u,orange){
   if(fromTxt!==lastFrom){lastFrom=fromTxt;(d||(d={})).from=fromTxt;}
   if(d) onHud(d);
 
+  /* El sonido, en cambio, quiere el frame entero. Se le manda `pe` y no `p`
+     porque el sonido tiene que plegar donde pliega el dibujo: si escuchara `p`
+     crudo, el final del ciclo sonaría a un lugar en el que la pieza ya no
+     está. Y la fase interior va aparte porque el desgarro del albedo no ocurre
+     en un umbral de etapa — ocurre adentro de una.
+
+     EL CUARTO ARGUMENTO SON LAS SEÑALES DEL CUERPO, y existe por una razón que
+     conviene dejar escrita: el sonido no puede recalcularlas. `ROOT`, `SHOOT` y
+     los siete umbrales de la fase interior son constantes de ESTE módulo, y
+     copiarlas del otro lado sería tener el mismo movimiento escrito dos veces
+     en dos archivos que nadie se acordaría de sincronizar. Lo que suena una
+     raíz creciendo tiene que ser LA raíz que está creciendo.
+
+     Se reusa el mismo objeto en todos los frames a propósito: uno nuevo por
+     frame serían sesenta objetos por segundo para el recolector, y el que lo
+     recibe lo lee y lo suelta en la misma llamada. */
+  sig.root  = key(ROOT,pe);
+  sig.shoot = key(SHOOT,pe);
+  /* La flor, con la misma fórmula que abre los pétalos en el dibujo pero sin el
+     desfasaje por flor: lo que el sonido quiere saber es si HAY floración, no
+     en qué punto está cada corola. */
+  sig.bloom = clamp((pe-0.550)/0.030)*(1-clamp((pe-0.605)/0.028));
+  sig.enter = ramp(pe,IN_ENTER);
+  sig.peel  = ramp(pe,IN_PEEL);
+  sig.exit  = ramp(pe,IN_EXIT);
+  sig.turn  = ramp(pe,IN_TURN);
+  sig.bare  = ramp(pe,IN_BARE);
+  sig.fan   = ramp(pe,IN_FAN);
+  sig.rel   = ramp(pe,IN_REL);
+  onTick(pe,nightNow,interiorNow,sig);
+
   const acc=mixH('#6E9247',PROJECTS[chosenFruit].hue,orange);
   if(acc!==lastAcc){lastAcc=acc;onAccent(acc);}
 
@@ -4291,6 +4340,7 @@ function frame(now){
   scrollV=REDUCED?0:lerp(scrollV,inst,1-Math.pow(0.05,dt));
   const calm=1-0.86*clamp((scrollV-0.030)/0.130);
   const night=pe<0.25?0:clamp(Math.sin(cyc*6.283-1.4)*1.5+0.25)*calm;
+  nightNow=night;
   const orange = pe<0.685 ? 0.03 : clamp(0.06+(Math.floor(cyc)-3)/3);   // el origen sigue al conteo de noches: con tres noches menos en los tramos tempranos, -3 deja el viraje en el MISMO tramo de scroll (0.685 a 0.76)
 
   const camY=keyC(CAM_Y,pe),camS=keyC(CAM_S,pe);
