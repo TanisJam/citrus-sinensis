@@ -88,7 +88,16 @@ export function createEngine(host){
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const cv = host.canvas;
-const ctx = cv.getContext('2d', { alpha:false });
+/* `ctx` es MUTABLE a proposito. Durante la entrada de la fruta el mundo se
+   dibuja a un lienzo aparte para poder fundirlo COMO CAPA, y la unica forma
+   barata de hacerlo sin tocar las cuarenta funciones de dibujo es apuntar `ctx`
+   al lienzo de al lado y devolverlo despues. */
+let ctx = cv.getContext('2d', { alpha:false });
+const ctxMain = ctx;
+/* El lienzo del mundo. Con alpha, a diferencia del principal: lo que se compone
+   despues necesita saber donde no hay nada dibujado. */
+const offCv = document.createElement('canvas');
+const offCtx = offCv.getContext('2d');
 let W=0,H=0,DPR=1;
 
 /* Todo lo que el motor devuelve al exterior. Los defaults dejan que el motor
@@ -313,14 +322,20 @@ const fold=p=> Math.round((p>=LOOP_AT ? p-LOOP_AT : p)*1e9)/1e9;
 /* ============ cámara ============ */
 const CAM_Y=[[0,-1180],[0.048,-90],[0.085,30],[0.125,90],[0.165,170],
   [0.205,270],[0.245,140],[0.275,-10],[0.335,-70],[0.395,-120],[0.465,-170],
-  [0.545,-210],[0.615,-230],[0.690,-240],[0.750,-250],[0.790,-262],
+  [0.545,-210],[0.578,-430],[0.635,-450],[0.664,-372],[0.706,-240],[0.750,-250],[0.790,-262],
   [0.812,-300],[0.856,-360],[0.95,-1180]];
 /* Los dos extremos tienen que ser el MISMO valor: 0.95 renderiza lo mismo que
    0, y ahí es donde cierra el bucle. Subieron los dos juntos de 1.9 a 2.6 para
    que la semilla abra la pieza con tamaño de sujeto y no de detalle. */
 const CAM_S=[[0,2.6],[0.048,2.6],[0.085,3.0],[0.125,2.6],[0.165,2.1],[0.205,1.7],
   [0.245,1.5],[0.275,1.35],[0.335,1.05],[0.395,0.85],[0.465,0.68],[0.545,0.58],
-  [0.615,0.55],[0.690,0.54],[0.750,0.56],[0.790,0.64],[0.812,0.92],
+  /* El pico de 0.578 a 0.664 es la floracion. La escala se quedaba plana en
+     0.54-0.58 -el plano MAS abierto de la pieza- justo encima de la antesis, y
+     el azahar quedaba en siete pixeles. El cielo no le ganaba al sujeto por ser
+     activo: le ganaba POR AREA. Los azahares estaban dibujados desde siempre;
+     acercar no agrega dibujo, destapa el que ya estaba. La salida va en dos
+     tramos porque de 2.10 a 0.54 de un saque se lee como un tiron. */
+  [0.578,1.95],[0.635,2.10],[0.664,1.28],[0.706,0.54],[0.750,0.56],[0.790,0.64],[0.812,0.92],
   [0.856,1.6],[0.95,2.6]];
 
 /* ============ etapas + notas de campo ============ */
@@ -651,6 +666,7 @@ function resize(){
   DPR=Math.min(devicePixelRatio||1,2);
   W=innerWidth;H=innerHeight;
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  offCv.width=cv.width;offCv.height=cv.height;
   cv.style.width=W+'px';cv.style.height=H+'px';
 }
 /* ============ reparto del scroll ============
@@ -2615,16 +2631,38 @@ const STI_N=1600, STI=new Float32Array(STI_N*3);
   }
 })();
 /* tone(x,y) devuelve 0 (oscuro, muy punteado) a 1 (brillo, sin puntos). */
-function stipple(cx,cy,R,col,tone,gain,dotR){
+/* `sa`/`ca` son el seno y el coseno del MISMO giro que usan los meridianos. Sin
+   ellos el puntilleo se dibujaba como un disco plano clavado a la pantalla: la
+   fruta rotaba de perfil a seccion transversal, las lineas acompanaban, y la
+   textura se quedaba quieta con los puntos en identica posicion. Un cuerpo cuya
+   piel no gira con el no se lee como un cuerpo.
+   El punto se levanta del disco a la ESFERA -z = raiz(1-x2-y2)-, se gira sobre x
+   igual que todo lo demas y se descarta si quedo atras. Hay que muestrear las
+   DOS caras: el disco cubre solo el hemisferio de adelante, asi que girando 90
+   grados la mitad se iba atras y todo el puntilleo se amontonaba arriba.
+   `tone` recibe la posicion YA girada: la luz esta fija en pantalla, asi que el
+   sombreado tiene que seguir a la superficie, no al punto. */
+function stipple(cx,cy,R,col,tone,gain,dotR,sa,ca){
   ctx.fillStyle=col;
   const d=Math.max(0.55,dotR);
+  const rot=!!sa;
   for(let i=0;i<STI_N;i++){
-    const ux=STI[i*3],uy=STI[i*3+1];
-    if(ux*ux+uy*uy>1) continue;
-    const dens=(1-tone(ux,uy))*gain;
-    if(STI[i*3+2]>dens) continue;
-    const s=d*(0.55+0.65*dens);
-    ctx.fillRect(cx+ux*R-s*0.5,cy+uy*R-s*0.5,s,s);
+    const ux=STI[i*3],uy0=STI[i*3+1],q=ux*ux+uy0*uy0;
+    if(q>1) continue;
+    const zr=rot?Math.sqrt(1-q):0;
+    for(let s2=1;s2>=-1;s2-=2){
+      let uy=uy0;
+      if(rot){
+        const z=zr*s2;
+        if(uy0*sa+z*ca<0) continue;          // quedo en la cara de atras
+        uy=uy0*ca-z*sa;
+      }
+      const dens=(1-tone(ux,uy))*gain;
+      if(STI[i*3+2]>dens) continue;
+      const s=d*(0.55+0.65*dens);
+      ctx.fillRect(cx+ux*R-s*0.5,cy+uy*R-s*0.5,s,s);
+      if(!rot) break;                        // sin giro hay un solo punto
+    }
   }
 }
 /* Vesículas de jugo: alargadas y radiales desde el eje, más densas hacia
@@ -3054,7 +3092,12 @@ function drawPeelStrips(R,peel,side,ex,gradFill,albedoBase,rindBase){
    pausas. */
 const IN_ENTER=[0.812,0.018];   // la fruta llega y se planta   → pausa hasta 0.836
 const IN_PEEL =[0.836,0.026];   // la cáscara se abre           → pausa hasta 0.867
-const IN_EXIT =[0.862,0.012];   // y se va, mientras aparece el albedo
+/* Medido cuadro a cuadro, la cascara no se caia: DESAPARECIA. El desvanecido
+   ocupaba el ultimo 30% de una rampa de 0.012, o sea 0.004 de pe. No era un
+   descuido -el giro arranca en 0.866, encima de esta rampa, y las tiras tienen
+   que estar afuera antes de que la fruta rote-, asi que se arranca antes y se
+   reparte mejor: termina donde terminaba, pero tarda 0.011 en vez de 0.004. */
+const IN_EXIT =[0.856,0.018];   // y se va, mientras aparece el albedo
 /* EL GIRO. Éste es el movimiento que faltaba, y su ausencia era el corte más
    feo de la pieza: de un cuadro al otro la fruta pasaba de ser una ESFERA VISTA
    DE COSTADO —con la cáscara meridiana y el albedo envolviéndola— a ser una
@@ -3243,7 +3286,7 @@ function drawInterior(pe,t){
      encuadre sin volverla nunca translúcida; el alpha sólo entra al final,
      cuando ya está fuera y no queda nada que rayar. */
   const peelEx=smooth(ramp(pe,IN_EXIT));
-  const peelFade=1-clamp((peelEx-0.70)/0.30);
+  const peelFade=1-clamp((peelEx-0.52)/0.48);
   if(peelFade>0.004){
     ctx.globalAlpha=peelFade;
     drawPeelStrips(R,peel,-1,peelEx,gRind,'#F4EDDD',rind);
@@ -3509,7 +3552,16 @@ function drawInterior(pe,t){
     HOLE[m]=smooth(clamp((bare-lag)/(1-lag)));
   }
   let holeMax=0; for(let m=0;m<GAJOS_TOTAL;m++) if(HOLE[m]>holeMax) holeMax=HOLE[m];
-  const rHole=RA*holeMax*1.06;
+  /* El desgarro NO puede ser mas grande que el albedo que esta rompiendo.
+     Estaba en RA*1.06 y se veia: sobre el final los lobulos de pulpa cruzaban
+     por fuera del disco de albedo y el canto blanco quedaba trazado sobre el
+     fondo. El 1.06 estaba para que no quedara un anillo sin romper -el feston
+     hunde el radio hasta 0.76 en el medio de cada sector-, pero la forma
+     correcta de resolver eso no es agrandar el agujero: es APLANAR el feston a
+     medida que se completa. Al principio conserva sus diez lobulos; al final
+     llega a RA parejo, que es donde termina el albedo. */
+  const rHole=RA*holeMax;
+  const lobA=0.24*(1-holeMax*holeMax);
   /* El contorno del desgarro, muestreado. Se usa dos veces —para restar el
      agujero del anillo de albedo y para trazar su canto— así que se construye
      una vez acá y no dos veces mal. Va en sentido HORARIO porque tiene que
@@ -3521,8 +3573,14 @@ function drawInterior(pe,t){
       /* Dentro del sector, la rasgadura va más adelantada sobre los tabiques
          —los bordes— que sobre el medio. Eso es el lóbulo, y es lo que hace
          visible que se abre por donde la fruta ya venía dividida. */
-      const lob=0.76+0.24*Math.abs(Math.cos(fr*Math.PI));
-      const rr=lerp(HOLE[m],HOLE[(m+1)%GAJOS_TOTAL],fr)*RA*1.06*lob*scale;
+      const lob=(1-lobA)+lobA*Math.abs(Math.cos(fr*Math.PI));
+      /* Y el borde va MELLADO. El albedo es una malla de fibras: se rasga
+         irregular, nunca por una curva limpia. La mella es determinista (sale de
+         `q`), asi que el trazo del canto y la resta del relleno usan el mismo
+         contorno, y se apaga junto con el feston para que el final cierre
+         parejo en RA. */
+      const j=1+lobA*0.085*(Math.sin(q*2.7)*0.6+Math.sin(q*7.3)*0.4);
+      const rr=lerp(HOLE[m],HOLE[(m+1)%GAJOS_TOTAL],fr)*RA*lob*j*scale;
       const a=(t/GAJOS_TOTAL)*6.283-1.5708+0.31;
       const x=Math.cos(a)*rr, y=Math.sin(a)*rr;
       if(q===NH) g.moveTo(x,y); else g.lineTo(x,y);
@@ -3594,7 +3652,7 @@ function drawInterior(pe,t){
       stipple(0,0,R*0.91,rgba(shadeD('#B7A88C',0.34),0.55),(ux,uy)=>{
         const z=1-ux*ux-uy*uy;
         return clamp(0.80*(ux*LIGHT.x+uy*LIGHT.y)+0.58*Math.sqrt(z>0?z:0));
-      },0.62,Math.max(0.6,R*0.0075));
+      },0.62,Math.max(0.6,R*0.0075),tSin,Math.cos(turn*1.5708));
     }
     ctx.restore();
     // Borde del desgarro: sin él el agujero se lee como un recorte, no como
@@ -3610,6 +3668,62 @@ function drawInterior(pe,t){
       ctx.globalAlpha=albedoA*0.28;
       ctx.lineWidth=Math.max(1,R*0.022);
       ctx.beginPath();holePath(ctx,0.955);ctx.stroke();
+    }
+    /* ---- LOS HILOS ----
+       Esto es lo que faltaba, y no era una forma distinta de mover el borde: era
+       lo que hay EN EL MEDIO mientras se rompe.
+       El albedo no es una membrana lisa. Es una red de células con bolsones de
+       aire —el telgopor de la fruta— y de ahí salen los hilos que uno arranca de
+       los gajos al pelarla. Una red así no se separa por una línea: se separa en
+       hebras que cruzan la abertura y se van cortando de a una. Un contorno
+       limpio, por bien que se anime, nunca va a leerse como albedo rompiéndose,
+       porque le falta justamente esto.
+       Cada hilo nace anclado a la pulpa en el radio donde el desgarro lo alcanzó,
+       y su otra punta viaja con el canto. Mientras el canto se aleja el hilo se
+       ESTIRA —y se afina, que es lo que hace una fibra antes de cortarse— hasta
+       pasar su límite, y ahí desaparece. El límite es propio de cada hilo: si se
+       cortaran todos juntos sería un telón, no una rotura. */
+    if(holeMax>0.01&&R>60){
+      /* Setenta y dos era muy poco: en cada instante solo viven los hilos cuyo
+         nacimiento cae dentro de `lim` del canto, o sea una banda angosta, y con
+         setenta y dos repartidos en todo el radio quedaban tres pelos sueltos.
+         La cuenta que importa no es cuantos hay: es cuantos hay VIVOS a la vez. */
+      const HN=260;
+      ctx.strokeStyle=shadeD(mixH(cAlbedo,'#FFFFFF',0.35),0.96);
+      ctx.lineCap='round';
+      for(let i=0;i<HN;i++){
+        const f=n=>{const h=Math.sin(n)*43758.5453;return h-Math.floor(h);};
+        const h1=f(i*12.9898), h2=f(i*78.233), h3=f(i*39.425), h4=f(i*17.71);
+        const a=(i/HN)*6.283+(h1-0.5)*0.10;
+        // Dónde nace: sobre la pulpa, lejos del centro —el desgarro arranca ahí
+        // y un hilo que nazca en el eje se ve estirado desde el primer frame.
+        const b=RA*(0.16+0.78*h2);
+        const lim=RA*(0.075+0.135*h3);        // cuánto aguanta antes de cortarse
+        /* El canto en ESE ángulo. Se recalcula acá en vez de guardarse porque el
+           contorno del desgarro ya está descrito por `HOLE` y el festón: pedirle
+           el radio a un ángulo es leer lo mismo, no duplicarlo. */
+        let t=((a+1.5708-0.31)/6.283)*GAJOS_TOTAL;
+        t=((t%GAJOS_TOTAL)+GAJOS_TOTAL)%GAJOS_TOTAL;
+        const m=Math.floor(t), fr=t-m;
+        const lb=(1-lobA)+lobA*Math.abs(Math.cos(fr*Math.PI));
+        const e=lerp(HOLE[m],HOLE[(m+1)%GAJOS_TOTAL],fr)*RA*lb;
+        const st=e-b;
+        if(st<=0||st>lim) continue;           // no lo alcanzó todavía, o ya se cortó
+        const u=st/lim;                       // 0 recién enganchado, 1 a punto de cortarse
+        /* Se afina y se apaga con el estirón. Una fibra tensa no se corta de
+           golpe a grosor completo: adelgaza primero, y esa es toda la lectura. */
+        ctx.globalAlpha=albedoA*(1-u*u);
+        ctx.lineWidth=Math.max(0.7,R*0.0085*(1-0.6*u));
+        /* Panza lateral: un hilo estirado no es una recta radial. Se va yendo
+           mientras lo arrastran, y se endereza cuando la tensión lo vence. */
+        const bow=(h4-0.5)*0.055*(1-u);
+        const ca2=Math.cos(a), sa2=Math.sin(a);
+        const am=a+bow, rm=(b+e)*0.5;
+        ctx.beginPath();
+        ctx.moveTo(ca2*b,sa2*b);
+        ctx.quadraticCurveTo(Math.cos(am)*rm,Math.sin(am)*rm,ca2*e,sa2*e);
+        ctx.stroke();
+      }
     }
     ctx.globalAlpha=1;
   }
@@ -3916,8 +4030,15 @@ function frame(now){
   if(!HOLD){ p+=dp; wrap(); }
   const pe=fold(p);
 
-  const cyc=key([[0.25,0],[0.52,4],[0.70,7],[0.79,10],[0.95,11]],pe,t=>t);
-  /* Once noches en el recorrido: pasando rápido se ven todas de golpe y
+  const cyc=key([[0.25,0],[0.52,2],[0.70,4],[0.79,7],[0.95,8]],pe,t=>t);
+  /* Ocho noches, no once, y repartidas al reves. Medido sobre pixel: entre pe
+     0.50 y 0.77 el arbol no cambia de silueta, y ahi el cielo ciclaba cinco o
+     seis veces. Lo que pasa seguido deja de significar: con once noches, la
+     noche no valia nada cuando tenia que valer. Ahora la densidad se concentra
+     entre 0.70 y 0.79, que es donde las noches HACEN algo -son el frio que
+     rompe la clorofila-, y las tres que maduran el fruto son las primeras que
+     el ojo registra como evento.
+     Original: pasando rápido se ven todas de golpe y
      estrobea. La amplitud se comprime con la velocidad de scroll y vuelve
      cuando se asienta. Se multiplica —no se desplaza— así que en pe < 0.25
      sigue dando 0 exacto y el bucle no se entera. */
@@ -3926,7 +4047,7 @@ function frame(now){
   scrollV=REDUCED?0:lerp(scrollV,inst,1-Math.pow(0.05,dt));
   const calm=1-0.86*clamp((scrollV-0.030)/0.130);
   const night=pe<0.25?0:clamp(Math.sin(cyc*6.283-1.4)*1.5+0.25)*calm;
-  const orange = pe<0.685 ? 0.03 : clamp(0.06+(Math.floor(cyc)-6)/3);
+  const orange = pe<0.685 ? 0.03 : clamp(0.06+(Math.floor(cyc)-3)/3);   // el origen sigue al conteo de noches: con tres noches menos en los tramos tempranos, -3 deja el viraje en el MISMO tramo de scroll (0.685 a 0.76)
 
   const camY=keyC(CAM_Y,pe),camS=keyC(CAM_S,pe);
   const sky=skyColors(pe,night);
@@ -3972,11 +4093,52 @@ function frame(now){
   interiorNow=interior;
 
   if(interior<0.985){
+    /* EL FUNDIDO DEL MUNDO VA ACA, SOBRE LA CAPA ENTERA, y no como `globalAlpha`
+       antes de dibujar. Eso ultimo es lo que habia y no funcionaba nunca: el
+       arbol, el suelo y el aire ASIGNAN su propio `globalAlpha` -hay ochenta y
+       seis asignaciones en el archivo, varias de ellas un reset a 1- y canvas no
+       multiplica, reemplaza. O sea que el alpha de afuera lo pisaba el primer
+       dibujo de adentro y el mundo se veia opaco hasta que el guard lo cortaba:
+       crecia y desaparecia de golpe, sin fundido, que es exactamente lo que se
+       veia.
+       Componiendo aparte el problema desaparece por construccion: adentro cada
+       cual hace con su alpha lo que quiera, y la opacidad de la CAPA la decide
+       un solo `drawImage`. */
+    const wFade=1-clamp((interior-0.30)/0.60);
+    const layer=wFade<0.999;
+    if(layer){
+      ctx=offCtx;
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.clearRect(0,0,offCv.width,offCv.height);
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+    }
     ctx.save();
-    ctx.translate(W/2,H*0.52);ctx.scale(camS,camS);ctx.translate(0,-camY);
+    ctx.translate(W/2,H*0.52);
+    /* El mundo se va SALIENDO DE CUADRO, no bajándole el alpha, que es el mismo
+       criterio con el que se va la cáscara y por el mismo motivo. El árbol se
+       desvanecía de golpe —`1 − interior·0.96` sobre una rampa de 0.018 de pe—
+       y un bosque que se vuelve transparente no se lee como algo que quedó
+       atrás: se lee como un dibujo que alguien apagó.
+       Lo que está pasando en la escena es que la fruta viene hacia el
+       espectador. Entonces el mundo tiene que hacer lo que hace el mundo cuando
+       uno lo atraviesa: crecer y abrirse hacia los bordes. Se escala desde el
+       punto donde está la fruta, así que el árbol se agranda y sale por los
+       costados mientras ella llega, y para cuando el alpha entra a trabajar ya
+       casi no queda nada en cuadro que apagar.
+       El alpha se retrasa a propósito: se queda entero hasta que el empuje hizo
+       la mitad del trabajo, y recién ahí limpia lo que sobra. */
+    const push=1+interior*interior*2.4;
+    ctx.scale(push,push);
+    ctx.scale(camS,camS);ctx.translate(0,-camY);
     const hw=W/2/camS,hh=H/2/camS;
     const view={x0:-hw,x1:hw,y0:camY-hh,y1:camY+hh,w:hw*2};
-    ctx.globalAlpha=1-interior*0.96;
+    /* Y el fundido tiene que llegar a CERO, y llegar ANTES que el corte. Estaba
+       en `…*0.96`, o sea que se plantaba en 4% de opacidad, y el bloque entero
+       deja de dibujarse en `interior >= 0.985`: el mundo fundía hasta un 4% y
+       ese último 4% se iba de un cuadro al otro. Un fundido que no termina en
+       cero no es un fundido, es un corte con antesala.
+       Ahora cierra en `interior = 0.90` —bastante antes del 0.985 que apaga el
+       bloque—, así que para cuando el corte llega no hay nada que cortar. */
     drawSky(view,sky,night);
     drawSoil(view,camS);
     if(pe<LOOP_LEN){
@@ -3989,12 +4151,32 @@ function frame(now){
          detalle completo justo mientras se van a 4% de opacidad debajo del
          interior. Dibujar nervaduras que nadie va a ver es lo que hacía perder
          el frame en el momento más dramático de la pieza. */
-      drawTree(tree,t,pe,mat,camS*(1-interior*0.92),dt);
+      /* ACÁ estaba el "el árbol desaparece de golpe", y no era el alpha.
+         La escala que entra al LOD estaba rebajada al 8% (`1 − interior·0.92`)
+         para no pagar nervaduras que nadie iba a ver. Pero el LOD de la hoja no
+         sólo baja detalle: `sp < 1.2` DESCARTA la hoja. Con la escala hundida al
+         8%, la copa entera cruza ese umbral casi junta y el árbol se queda pelado
+         de un cuadro al otro, con las ramas todavía visibles. No se desvanecía:
+         se quedaba calvo.
+         Y el empuje lo agravó: ahora el mundo se ESCALA hacia afuera, o sea que
+         las hojas son más grandes en pantalla que nunca, mientras el LOD seguía
+         calculando con una escala que las creía diminutas.
+         Se le pasa el empuje —que es la verdad de lo que mide la pantalla— y la
+         rebaja baja de 0.92 a 0.45: sigue ahorrando detalle en el momento más
+         caro, pero ya no barre la copa. */
+      drawTree(tree,t,pe,mat,camS*push*(1-interior*0.45),dt);
       if(pe>0.545) drawFlowers(tree,pe,orange,camS,camY,picking||interior>0?chosenFruit:-1);
     }
     drawAir(view,pe,t,night);   // el aire va delante de todo lo que atraviesa
     ctx.globalAlpha=1;
     ctx.restore();
+    if(layer){
+      ctx=ctxMain;
+      ctx.save();ctx.setTransform(1,0,0,1,0,0);
+      ctx.globalAlpha=wFade;
+      ctx.drawImage(offCv,0,0);
+      ctx.globalAlpha=1;ctx.restore();
+    }
   }
 
   if(interior>0) drawInterior(pe,t);
