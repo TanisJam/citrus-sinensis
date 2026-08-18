@@ -387,10 +387,6 @@ export function createAudio() {
      rebobinar, sólo avanza, y lo que `p` cambia es SOBRE QUÉ avanza. */
   let beatAt = 0, beat = 0, progIdx = 0, chordNow = null;
 
-  /* Lo que el motor estaba haciendo en el frame anterior, para poder sacar la
-     velocidad de crecimiento. Es lo único de este archivo que necesita
-     acordarse del frame pasado. */
-  let rootPrev = 0, shootPrev = 0, rootVel = 0, shootVel = 0;
   /* Y lo que el planificador de pájaros necesita saber y no puede ver: corre en
      su propio reloj y no recibe frames. */
   let nightNow = 0, shootNow = 0, birdNext = 0;
@@ -486,35 +482,14 @@ export function createAudio() {
        pesarlos todos juntos contra la música y contra las camas, balancearlos
        sería tocar quince números. */
     const world = ctx.createGain();
-    world.gain.value = 0.85;
+    world.gain.value = 1;
     world.connect(master);
 
-    /* ---- LA RAÍZ CAVANDO ----
-       Tierra desplazándose, que es lo más sordo que hay: ruido marrón por un
-       pasabanda bajo y angosto. No tiene nada arriba de 400 Hz porque abajo de
-       la tierra no hay aire que lleve los agudos, y ese recorte es la mitad de
-       lo que hace que suene enterrado.
-
-       Sin envío al reverb, a propósito: una cola implicaría un espacio, y bajo
-       tierra no hay espacio, hay materia. */
-    const dig = bed(brown, 'bandpass', 190, 1.4);
-    dig.g.connect(world);
-
-    /* ---- EL BROTE SUBIENDO ----
-       Fibra estirándose. Más arriba y más ancho que la raíz, con envío, porque
-       esto sí pasa en el aire. El filtro se abre con el tamaño del brote. */
-    const rise = bed(pink, 'bandpass', 420, 2.2);
-    rise.g.connect(world);
-    const riseSend = ctx.createGain();
-    riseSend.gain.value = 0.35;
-    rise.g.connect(riseSend).connect(verb);
-
-    /* ---- el bus del conjunto ----
-       Las tres voces cuelgan de acá y no del master, por la misma razón que
-       `BEDS` existe: el envío al reverb sale DESPUÉS, así que bajar este nodo
-       baja el seco y el mojado en la misma proporción y la mezcla interna del
-       conjunto no se toca. Es el sitio donde `p` decide cuánto aire tiene la
-       música por delante de las camas. */
+    /* ---- el bus de la música ----
+       El piano y su resonancia cuelgan de acá, separados del bus del mundo, y
+       la separación es lo que permite pesar una cosa contra la otra con un solo
+       número. El envío al reverb sale DESPUÉS, así que bajar este nodo baja el
+       seco y el mojado en la misma proporción: la mezcla interna no se toca. */
     const voices = ctx.createGain();
     voices.gain.value = 0;
     voices.connect(master);
@@ -566,7 +541,10 @@ export function createAudio() {
       }
     }
 
-    L = { earth, air, bugs, night, trem, pink, brown, chirp, drift, voices, pad, padBus, world, dig, rise };
+    L = { earth, air, bugs, night, trem, pink, brown, chirp, drift, voices, pad, padBus, world };
+    /* Las capas de movimiento se arman después de `L` porque leen los buffers
+       y el bus de ahí: la tabla es declarativa y el grafo lo monta ella. */
+    buildFlows();
     built = true;
     return true;
   }
@@ -670,285 +648,301 @@ export function createAudio() {
     o.stop(t + dur + 0.05);
   }
 
-  /* ---- LA SEMILLA CAE EN LA TIERRA ----
-     Tierra, no piedra: lo que define el sonido es lo que NO tiene. Sin cola,
-     sin brillo, sin resonancia — la tierra se traga el impacto, y esa ausencia
-     es todo el material. Un thump grave que muere en un cuarto de segundo y un
-     puñado de granos secos alrededor. */
-  function evSeedFall() {
+  /* ============================================================
+   LO QUE SE MUEVE.
+
+   Éste es el segundo intento y conviene dejar escrito por qué el primero
+   estaba mal, porque el error era conceptual y es fácil de repetir.
+
+   La primera versión disparaba un sonido al CRUZAR un umbral: la cáscara
+   empezaba a abrirse y se lanzaba una envolvente de un segundo. Una vez
+   lanzada, esa envolvente corría contra el reloj del audio y ya no le importaba
+   dónde estaba el lector. Tres consecuencias, y las tres se oían:
+
+     · scrolleando despacio, el sonido terminaba y el resto de la animación
+       quedaba MUDA — la cáscara seguía abriéndose en silencio;
+     · scrolleando rápido, el sonido quedaba atrás;
+     · y volviendo para atrás NO SONABA NADA, porque un disparo no tiene marcha
+       atrás.
+
+   Lo correcto es que una transformación NO SEA UN EVENTO SINO UN ESTADO: el
+   sonido es una función de cuánto se está moviendo la cosa, en este instante.
+   Si el lector se detiene, se detiene. Si vuelve, suena igual — la cáscara
+   volviéndose a poner hace el mismo ruido que la cáscara abriéndose, porque es
+   la misma fibra rozando.
+
+   ---- por qué la velocidad se normaliza, que es lo único fino de acá ----
+
+   Las transformaciones duran cosas MUY distintas: la raíz tarda 0.59 de `p` en
+   crecer entera y la fruta tarda 0.018 en llegar. O sea que con el mismo scroll
+   la señal de la fruta se mueve TREINTA VECES más rápido que la de la raíz. Sin
+   corregir eso, el pelado revienta y la raíz no se oye — que es exactamente lo
+   que pasaba.
+
+   La corrección es multiplicar la derivada por el LARGO de la transformación:
+
+       ds/frame · span  ≈  dp/frame
+
+   y `dp/frame` es la velocidad de scroll, igual para todos. Después cada capa
+   se pesa con su propia ganancia, que ya es una decisión de mezcla y no de
+   escala.
+
+   Ojo con lo que NO se hace acá: no se usa `dp` directo. Tiene que ser la
+   derivada de CADA señal, porque `ROOT` y `SHOOT` tienen mesetas —el cítrico
+   crece de raíz o de brote, nunca los dos a la vez— y durante una meseta el
+   lector avanza pero la raíz no se mueve. Con `dp` sonaría igual; con la
+   derivada real, se calla. Esa alternancia sale sola y no la programó nadie.
+
+   ---- la cola ----
+
+   El suavizado es ASIMÉTRICO y ahí está lo que se siente: sube en tres cuadros
+   y baja en medio segundo. Si el lector frena en mitad del pelado, el sonido
+   sigue cediendo un segundo largo y muere solo, en vez de cortarse. Un
+   `setTargetAtTime` simétrico no puede hacer esto: la constante de tiempo es
+   una sola para las dos direcciones.
+
+   ---- los granos ----
+
+   Un desgarro no es una textura: son FIBRAS cediendo de a una, y una fibra es
+   un disparo. Entonces la TASA de granos sale del movimiento —`acc += d · rate`
+   y cada vez que pasa de uno, se rompe una fibra— y no de un reloj. Sin
+   movimiento no se rompe nada, que es lo que pasa de verdad. Y como la
+   velocidad es absoluta, yendo para atrás también se rompen: eso es lo que se
+   oye cuando la cáscara se vuelve a poner.
+   ============================================================ */
+
+  /* La velocidad de scroll de referencia, en señal por frame. Sale de medir: un
+     recorrido cómodo de la pieza mueve `p` unas nueve cienmilésimas por cuadro.
+     Es el número que convierte "cuánto se movió" en "cuánto suena", y el que
+     estaba mal por un factor de veinte en la versión anterior — por eso las
+     raíces no se escuchaban. */
+  const VEL_REF = 0.00012;
+
+  /* Subir toma tres cuadros; bajar, medio segundo. Ver la nota sobre la cola. */
+  const RISE = 0.30, FALL = 0.030;
+
+  /* Un salto de scroll más grande que esto no es alguien recorriendo la pieza,
+     es un corte — y la derivada de un corte es enorme. Se descarta, si no el
+     pliegue del bucle sonaría como si el mundo entero se moviera de golpe. */
+  const JUMP = 0.02;
+
+  /* ---- LA TABLA ----
+     Cada transformación del dibujo, con de qué señal sale y cómo suena. Es
+     declarativa a propósito: con dieciséis de éstas escritas a mano, cambiar el
+     criterio de una significaría acordarse de cambiarlo en dieciséis lugares.
+
+       `span`  cuánto dura la transformación en `p` — el normalizador
+       `hz`    el filtro se mueve DENTRO de la transformación, así que el timbre
+               evoluciona mientras la cosa se abre en vez de ser un color fijo
+       `rate`  granos por unidad de movimiento; 0 = textura pura, sin fibras */
+  const FLOWS = [
+    /* LA SEMILLA CAYENDO. Aire, y el filtro se abre a medida que gana
+       velocidad: algo que cae rápido corta más aire. */
+    { key: 'fall', span: 0.05, buf: 'pink', type: 'bandpass', hz: [240, 800], q: 1.4,
+      gain: 0.132, send: 0.4, rate: 0 },
+
+    /* LA SEMILLA HINCHÁNDOSE. Agua entrando en un tejido: todo grave, nada
+       arriba de 300 Hz, y unos pocos crujidos afinados de la testa tensándose. */
+    { key: 'imbibe', span: 0.12, buf: 'brown', type: 'lowpass', hz: [110, 260], q: 0.9,
+      gain: 0.36, send: 0.15, rate: 70,
+      grain: { buf: 'pink', type: 'bandpass', q: 22, dur: 0.10, lvl: 0.054, send: 0.3,
+               tuned: true, oct: [3, 4] } },
+
+    /* LA RAÍZ ABRIÉNDOSE PASO. Sonaba a TORMENTA y el motivo es medible: un
+       pasabanda de Q 1.5 sobre ruido marrón es una banda anchísima, y una banda
+       ancha grave ES un trueno. Ahora la textura queda en un piso apenas
+       audible —el roce de la tierra, nada más— y el sonido lo llevan los
+       granos: piedritas y raicillas cediendo, cada una con su altura, sacada
+       del acorde. Sin envío al reverb: abajo no hay espacio, hay materia. */
+    { key: 'root', span: 0.59, buf: 'brown', type: 'lowpass', hz: [110, 220], q: 0.7,
+      gain: 0.264, send: 0, rate: 300,
+      grain: { buf: 'brown', type: 'bandpass', q: 16, dur: 0.13, lvl: 0.12, send: 0.06,
+               tuned: true, oct: [1, 2] } },
+
+    /* EL TALLO SUBIENDO. Fibra estirándose: una capa MUY baja, porque lo que
+       hace el trabajo son los crujidos de las ramas, no esto. */
+    { key: 'shoot', span: 0.48, buf: 'pink', type: 'bandpass', hz: [300, 700], q: 3.2,
+      gain: 0.108, send: 0.35, rate: 0 },
+
+    /* CADA RAMA BROTANDO. Acá había ocho bips. La señal es cuántas ramas están
+       creciendo EN ESTE INSTANTE, así que la densidad de crujidos sube con el
+       flush y baja cuando el árbol descansa. Afinados: un brote que cruje en
+       una nota del acorde deja de ser un ruidito y pasa a ser parte de la
+       música. */
+    { key: 'bud', span: 0.48, buf: 'pink', type: 'bandpass', hz: [500, 1000], q: 4,
+      gain: 0.0528, send: 0.4, rate: 700,
+      grain: { buf: 'pink', type: 'bandpass', q: 20, dur: 0.13, lvl: 0.052, send: 0.5,
+               tuned: true, oct: [2, 3] } },
+
+    /* LAS HOJAS ABRIENDO. Lo que sonaba a ruido blanco, y por dos razones a la
+       vez: un pasaaltos ancho arriba de 2 kHz es `sharpness` pura —la métrica
+       de Zwicker que mide exactamente cuánto molesta un sonido— y encima los
+       granos atacaban con un escalón, que tiene espectro plano.
+
+       Ahora no hay textura de banda ancha en absoluto: son SÓLO granos, con
+       campana de Hann, resonantes y afinados. Y bajaron de octava: una hoja
+       chica resuena agudo, pero el registro de 3 a 5 kHz es donde el oído más
+       se cansa, así que el follaje vive una octava más abajo de lo que sería
+       "realista". Suena mejor y no se nota, que es el intercambio correcto. */
+    { key: 'leaf', span: 0.48, buf: 'pink', type: 'bandpass', hz: [900, 1400], q: 3,
+      gain: 0.165, send: 0.5, rate: 1500,
+      grain: { buf: 'pink', type: 'bandpass', q: 26, dur: 0.075, lvl: 0.165, send: 0.55,
+               tuned: true, oct: [3, 4] } },
+
+    /* LA FLOR. Aire fino, sin granos: una corola no cruje. */
+    { key: 'bloom', span: 0.055, buf: 'pink', type: 'bandpass', hz: [800, 1800], q: 2.2,
+      gain: 0.132, send: 0.65, rate: 0 },
+
+    /* LA NARANJA ACERCÁNDOSE. Sonaba a TRUENO, y literalmente lo era: ruido
+       marrón con un pasabajos barriendo hacia abajo es la receta de manual de
+       un trueno. El error de fondo era usar RUIDO para algo que tiene cuerpo —
+       una naranja es una masa compacta, no una turbulencia.
+
+       Ahora la textura es un hilo mínimo y el peso lo lleva `enterBody()`, que
+       son notas del acorde en el registro grave hinchándose. Un cuerpo que se
+       acerca gana graves y gana ARMÓNICOS, no ruido. */
+    { key: 'enter', span: 0.018, buf: 'brown', type: 'lowpass', hz: [600, 200], q: 0.8,
+      gain: 0.1728, send: 0.3, rate: 0 },
+
+    /* LA CÁSCARA ABRIÉNDOSE. **Mauricio dijo que ésta está bien**, así que se
+       toca lo mínimo: sólo hereda la campana de Hann y la ley de potencias, que
+       la mejoran sin cambiarle el carácter. Sigue SIN afinar a propósito — una
+       cáscara rompiéndose no tiene altura musical, y es justamente ese contraste
+       el que hace que se destaque del resto. */
+    { key: 'peel', span: 0.026, buf: 'pink', type: 'bandpass', hz: [700, 2400], q: 4,
+      gain: 0.792, send: 0.4, rate: 2600,
+      grain: { buf: 'pink', type: 'bandpass', hz: [1400, 3800], q: 9, dur: 0.055, lvl: 0.22, send: 0.4 },
+      spray: { every: 7, buf: 'pink', type: 'highpass', hz: [4200, 6800], q: 0.7, dur: 0.035, lvl: 0.176, send: 0.5 } },
+
+    /* LA CÁSCARA YÉNDOSE. Aire, y se apaga hacia arriba. */
+    { key: 'exit', span: 0.018, buf: 'pink', type: 'bandpass', hz: [900, 2200], q: 1.6,
+      gain: 0.12, send: 0.55, rate: 0 },
+
+    /* EL GIRO. Un movimiento no tiene ataque: todo está en el barrido. */
+    { key: 'turn', span: 0.018, buf: 'brown', type: 'bandpass', hz: [180, 620], q: 3.2,
+      gain: 0.24, send: 0.4, rate: 0 },
+
+    /* EL ALBEDO RASGÁNDOSE. Hermano del pelado, pero el albedo es ESPONJA: más
+       grave, más sordo, granos más blandos y más largos. */
+    { key: 'bare', span: 0.024, buf: 'pink', type: 'bandpass', hz: [340, 900], q: 3,
+      gain: 0.672, send: 0.5, rate: 2000,
+      grain: { buf: 'brown', type: 'bandpass', hz: [380, 800], q: 7, dur: 0.10, lvl: 0.2352, send: 0.5 } },
+
+    /* LOS GAJOS SEPARÁNDOSE. Diez tabiques cediendo, húmedos. Afinados y con Q
+       alto: separar una naranja tiene una musicalidad rara que se pierde si se
+       la hace con ruido. */
+    { key: 'fan', span: 0.020, buf: 'pink', type: 'bandpass', hz: [700, 1500], q: 6,
+      gain: 0.558, send: 0.45, rate: 2200,
+      grain: { buf: 'pink', type: 'bandpass', q: 18, dur: 0.09, lvl: 0.248, send: 0.45,
+               tuned: true, oct: [3, 4] } },
+
+    /* EL GAJO ELEGIDO ABRIÉNDOSE. Una sola membrana: húmedo, corto, afinado
+       arriba. */
+    { key: 'open', span: 0.008, buf: 'pink', type: 'bandpass', hz: [1200, 2400], q: 7,
+      gain: 0.4464, send: 0.5, rate: 2600,
+      grain: { buf: 'pink', type: 'bandpass', q: 24, dur: 0.07, lvl: 0.1984, send: 0.5,
+               tuned: true, oct: [4, 5] } },
+  ];
+
+  /* ============================================================
+     LOS DOS CONTACTOS.
+
+     Lo único que queda como evento en toda la pieza, y sobreviven por una razón
+     precisa: un contacto ES instantáneo. No hay nada que scrollear adentro de
+     dos superficies tocándose — la transformación dura cero. Todo lo demás pasó
+     a ser flujo.
+
+     Y son BLANDOS. Un golpe seco es lo que sonaba antes y es lo que había que
+     sacar: la semilla no golpea la tierra, se APOYA. La diferencia está en el
+     ataque —cincuenta milisegundos en vez de dos— y en que no hay nada arriba
+     de 600 Hz. Un ataque rápido con agudos es un impacto; sin agudos y con
+     ataque lento es un peso que se asienta.
+     ============================================================ */
+
+  /* LA SEMILLA APOYÁNDOSE EN LA TIERRA. Lo que define este sonido es lo que NO
+     tiene: sin cola, sin brillo, sin resonancia. La tierra se traga el impacto,
+     y esa ausencia es todo el material. */
+  function evSeedRest() {
     const t = ctx.currentTime;
-    body(150, 58, 0.20, 0.30, t, 'sine', 0.08);
-    const v = noiseVoice(L.brown, 'lowpass', 900, 190, 0.8, 0.16, 0.06, t);
-    decay(v.g.gain, t, 0.16, 0.22, 0.002);
-    /* Los granos: tierra suelta saltando. Tres o cuatro, desparramados en
-       ochenta milisegundos, que es lo que tarda en asentarse. */
-    for (let i = 0; i < 4; i++) {
-      const a = t + rnd(0.01, 0.09);
-      const q = noiseVoice(L.pink, 'bandpass', rnd(1400, 2600), 900, 3, 0.03, 0, a);
-      decay(q.g.gain, a, 0.03, rnd(0.03, 0.07), 0.001);
-    }
-  }
+    /* EL TIEMPO DE CONTACTO ES TODO. La versión anterior atacaba en cincuenta
+       milisegundos y todavía sonaba seca; el research lo explica y es lo mismo
+       que hace el fieltro del martillo de un piano: un material blando AMORTIGUA
+       LOS MODOS ALTOS durante el contacto. Lo que vuelve seco a un golpe no es
+       el volumen, son los agudos que sobreviven al impacto.
 
-  /* ---- LA SEMILLA SE ABRE ----
-     Dos cosas a la vez y en este orden: la testa cediendo —un crujido chiquito
-     y seco— y detrás el hinchamiento de la imbibición, que es lo que la abrió.
-     El crujido primero: la causa se oye después del efecto sólo en las
-     películas. */
-  function evSeedSplit() {
-    const t = ctx.currentTime;
-    const v = noiseVoice(L.pink, 'bandpass', 1600, 700, 5, 0.22, 0.2, t);
-    const g = v.g.gain;
-    g.setValueAtTime(0.0008, t);
-    /* Dentado: la cáscara no cede pareja, cede de a fibras. Cinco mordidas
-       alcanzan porque es una semilla, no un tronco. */
-    for (let i = 0; i < 5; i++) {
-      const a = t + (i / 5) * 0.18;
-      g.setValueAtTime(rnd(0.04, 0.13), a);
-      g.setValueAtTime(0.02, a + 0.014);
-    }
-    g.exponentialRampToValueAtTime(0.0008, t + 0.22);
-    /* Y el agua entrando: ataque lento, todo grave, nada arriba de 300 Hz.
-       Empieza tarde a propósito — la semilla se abre porque se hinchó, pero lo
-       que se oye primero es lo que se rompe. */
-    const w = noiseVoice(L.brown, 'lowpass', 110, 280, 0.9, 1.3, 0.15, t + 0.05);
-    decay(w.g.gain, t + 0.05, 1.3, 0.17, 0.5);
-  }
+       Entonces: contacto largo —ciento veinte milisegundos, que para un impacto
+       es una eternidad—, nada por encima de 260 Hz, y una caída lenta. Deja de
+       ser un golpe y pasa a ser un peso que se asienta. */
+    const t0 = 0.12;
 
-  /* ---- UNA RAMIFICACIÓN ----
-     El brote no crece parejo: `SHOOT` tiene escalones, y cada escalón es un
-     `flush` — un pulso en el que el cítrico saca madera nueva y para. Esto
-     suena una vez por escalón.
-
-     Madera, o sea: un cuerpo corto con la altura bajando (la fibra que cede) y
-     nada de cola. Cuanto más avanzado el árbol, más grave, porque la rama es
-     más gruesa. */
-  function evBranch(k, at) {
-    const t = when(at);
-    const f = 260 * Math.pow(0.72, k * 1.6);
-    body(f, f * 0.55, 0.13, 0.16, t, 'triangle', 0.35);
-    const v = noiseVoice(L.pink, 'bandpass', 2200, 1100, 4, 0.05, 0.25, t);
-    decay(v.g.gain, t, 0.05, 0.09, 0.002);
-  }
-
-  /* ---- FOLLAJE SALIENDO ----
-     No es un sonido, son muchos: una hoja que se abre no hace ruido, un flush
-     entero sí. Se arma con granos —siete a once impulsitos de ruido agudo
-     desparramados en medio segundo— y lo que lo hace leer como hojas y no como
-     estática es que los granos NO son parejos: se amontonan al principio y se
-     ralean, como cualquier cosa que se abre de golpe y después se acomoda. */
-  function evFoliage(amount, at) {
-    const t = when(at);
-    const n = 7 + ((Math.random() * 5) | 0);
-    for (let i = 0; i < n; i++) {
-      /* El cuadrado del azar es lo que amontona: valores chicos son más
-         probables que grandes, así que la mayoría cae temprano. */
-      const u = Math.random() * Math.random();
-      const a = t + u * 0.55;
-      const hz = rnd(2600, 5200);
-      const q = noiseVoice(L.pink, 'bandpass', hz, hz * 0.55, 6, 0.055, 0.3, a);
-      decay(q.g.gain, a, 0.055, rnd(0.02, 0.055) * amount, 0.004);
-    }
-  }
-
-  /* ---- LA FLOR SE ABRE ----
-     El sonido más difícil de la lista, porque una flor no hace ruido. Entonces
-     no se sintetiza el hecho: se sintetiza lo que el hecho SIGNIFICA. La nota
-     de campo lo dice — "the scent is the tree paying insects in advance" —, así
-     que esto es un pago: dos armónicos limpios con ataque lentísimo, una quinta
-     abierta, apareciendo desde nada. Sin percusión, sin ataque, sin ruido. Lo
-     único de toda la pieza que suena a que alguien puso algo ahí a propósito.
-     Que es exactamente lo que hace la planta. */
-  function evBloom() {
-    const t = ctx.currentTime;
-    for (const [mul, lvl, dur] of [[1, 0.055, 2.6], [1.5, 0.032, 2.2], [3, 0.016, 1.6]]) {
+    /* Tres modos, y los agudos se apagan MUCHO antes que el grave, que es lo
+       que hace cualquier cuerpo blando golpeado contra algo blando. Si duraran
+       lo mismo, sonaría a tambor. */
+    for (const [hz, lvl, dur] of [[58, 0.16, 0.75], [96, 0.055, 0.34], [142, 0.020, 0.16]]) {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.type = 'sine';
-      o.frequency.value = 660 * mul;
-      o.detune.value = rnd(-4, 4);
+      o.frequency.setValueAtTime(hz * 1.14, t);
+      /* La altura baja un poco mientras el contacto se aplana: la tierra cede y
+         el modo se afloja. */
+      o.frequency.exponentialRampToValueAtTime(hz, t + t0 * 2);
       g.gain.setValueAtTime(0.0008, t);
-      g.gain.exponentialRampToValueAtTime(lvl, t + 0.9);
+      g.gain.exponentialRampToValueAtTime(lvl, t + t0);
+      g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+      o.connect(g).connect(L.world);
+      const sn = ctx.createGain();
+      sn.gain.value = 0.15;
+      g.connect(sn).connect(verbSend);
+      o.start(t);
+      o.stop(t + dur + 0.1);
+    }
+
+    /* Y la tierra cediendo debajo. Un pasabajos cerrado y ataque lento: esto es
+       lo que lo vuelve tierra y no madera, y no lleva un solo agudo. */
+    const v = noiseVoice(L.brown, 'lowpass', 300, 130, 0.7, 0.45, 0.05, t);
+    decay(v.g.gain, t, 0.45, 0.085, 0.10);
+  }
+
+  /* LA SEMILLA SOLTÁNDOSE DEL GAJO. El último sonido de la vuelta, y por eso el
+     más difícil de acertar: si suena a final, la pieza termina, y la pieza NO
+     termina — esa semilla es la que va a estar cayendo en el primer cuadro de la
+     vuelta siguiente. Tiene que sonar a que algo se desprende y queda
+     disponible: limpio, corto, con cola larga y nada de peso.
+
+     La altura es LA TÓNICA, la misma de la que sale toda la armonía. Es el
+     único guiño que se permite la pieza: la semilla suena la nota con la que la
+     música va a volver a empezar. */
+  function evRelease() {
+    const t = ctx.currentTime;
+    const v = noiseVoice(L.pink, 'bandpass', 2200, 3400, 8, 0.06, 0.4, t);
+    decay(v.g.gain, t, 0.06, 0.075, 0.004);
+    for (const [mul, lvl, dur] of [[8, 0.065, 2.8], [16.05, 0.018, 1.4]]) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = TONIC * mul;
+      g.gain.setValueAtTime(0.0008, t);
+      g.gain.exponentialRampToValueAtTime(lvl, t + 0.012);
       g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
       o.connect(g).connect(L.world);
       const s = ctx.createGain();
-      s.gain.value = 0.7;
+      s.gain.value = 0.75;
       g.connect(s).connect(verbSend);
       o.start(t);
       o.stop(t + dur + 0.1);
     }
   }
 
-  /* ---- LOS PÉTALOS CAEN: UN VIENTITO ----
-     Una ráfaga, no una cama: sube y baja en dos segundos. Lo que la hace ráfaga
-     y no "shhh" es que el filtro barre HACIA ARRIBA y vuelve — el aire que
-     acelera se abre de espectro, igual que hace el viento en la copa, y la
-     misma curva que engorda la copa abre el filtro en la cama del aire. */
-  function evPetalFall() {
-    const t = ctx.currentTime;
-    const dur = 2.1;
-    const src = ctx.createBufferSource();
-    src.buffer = L.pink;
-    src.loop = true;
-    const flt = ctx.createBiquadFilter();
-    flt.type = 'bandpass';
-    flt.Q.value = 0.9;
-    flt.frequency.setValueAtTime(320, t);
-    flt.frequency.exponentialRampToValueAtTime(1500, t + dur * 0.42);
-    flt.frequency.exponentialRampToValueAtTime(280, t + dur);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0008, t);
-    g.gain.exponentialRampToValueAtTime(0.20, t + dur * 0.38);
-    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    src.connect(flt).connect(g).connect(L.world);
-    const s = ctx.createGain();
-    s.gain.value = 0.5;
-    g.connect(s).connect(verbSend);
-    src.start(t, Math.random() * L.pink.duration);
-    src.stop(t + dur + 0.1);
-  }
-
-  /* ---- LA FRUTA LLEGA Y SE PLANTA ----
-     Es lo único de la pieza que se mueve HACIA el espectador, así que el sonido
-     tiene que acercarse: un cuerpo que sube de altura y de volumen durante un
-     segundo largo, y al final se asienta. El golpe del final es blando y
-     redondo — una naranja pesa y no rebota. */
-  function evArrive() {
-    const t = ctx.currentTime;
-    const dur = 1.5;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(52, t);
-    o.frequency.exponentialRampToValueAtTime(96, t + dur);
-    g.gain.setValueAtTime(0.0008, t);
-    g.gain.exponentialRampToValueAtTime(0.26, t + dur * 0.88);
-    g.gain.exponentialRampToValueAtTime(0.0008, t + dur + 0.5);
-    o.connect(g).connect(L.world);
-    o.start(t);
-    o.stop(t + dur + 0.6);
-    /* El aire que trae adelante. Barre hacia abajo mientras el cuerpo sube:
-       dos direcciones opuestas es lo que hace que algo se lea como que se
-       acerca y no como que simplemente crece. */
-    const v = noiseVoice(L.pink, 'bandpass', 1800, 320, 1.2, dur, 0.35, t);
-    const vg = v.g.gain;
-    vg.setValueAtTime(0.0008, t);
-    vg.exponentialRampToValueAtTime(0.14, t + dur * 0.8);
-    vg.exponentialRampToValueAtTime(0.0008, t + dur);
-    /* Y el asiento. */
-    body(120, 46, 0.34, 0.22, t + dur, 'sine', 0.25);
-  }
-
-  /* ---- LA CÁSCARA SE ABRE ----
-     El sonido más rico de la pieza y el más agradecido de sintetizar, porque un
-     desgarro es exactamente ruido filtrado con la densidad subiendo. Lo que lo
-     hace sonar a fibra rompiéndose y no a un "shhh" es que la envolvente sea
-     DENTADA: las mordidas programadas encima son las fibras cediendo de a una.
-
-     Y arriba de todo va lo que hace que sea un CÍTRICO y no una caja: al
-     romperse, la cáscara ESCUPE aceite esencial por las glándulas. Son chorros
-     brevísimos y agudos, tres o cuatro, y sin ellos esto podría ser cualquier
-     cosa que se rasga. */
-  function evPeel() {
-    const t = ctx.currentTime;
-    const dur = 1.1;
-    const v = noiseVoice(L.pink, 'bandpass', 800, 2400, 5, dur, 0.4, t);
-    const g = v.g.gain;
-    g.setValueAtTime(0.0008, t);
-    g.exponentialRampToValueAtTime(0.20, t + 0.55);
-    for (let i = 0; i < 13; i++) {
-      const a = t + 0.05 + (i / 13) * (dur - 0.2);
-      const lvl = 0.04 + 0.17 * (i / 13);
-      g.setValueAtTime(lvl * rnd(0.35, 1), a);
-      g.setValueAtTime(lvl, a + 0.012);
-    }
-    g.exponentialRampToValueAtTime(0.0008, t + dur);
-    /* Los chisguetes de aceite. */
-    for (let i = 0; i < 4; i++) {
-      const a = t + rnd(0.1, dur * 0.8);
-      const q = noiseVoice(L.pink, 'highpass', 4200, 6800, 0.7, 0.045, 0.45, a);
-      decay(q.g.gain, a, 0.045, rnd(0.03, 0.075), 0.002);
-    }
-  }
-
-  /* ---- LA FRUTA GIRA ----
-     Un movimiento, y los movimientos no tienen ataque. Todo el sonido está en
-     el barrido: el filtro sube y vuelve mientras la ganancia hace una campana
-     completa, así que no hay ningún instante que se pueda señalar como "acá
-     empezó". Que es lo que uno oye cuando algo pesado rota. */
-  function evTurn() {
-    const t = ctx.currentTime;
-    const dur = 1.2;
-    const src = ctx.createBufferSource();
-    src.buffer = L.brown;
-    src.loop = true;
-    const flt = ctx.createBiquadFilter();
-    flt.type = 'bandpass';
-    flt.Q.value = 2.2;
-    flt.frequency.setValueAtTime(220, t);
-    flt.frequency.exponentialRampToValueAtTime(900, t + dur * 0.5);
-    flt.frequency.exponentialRampToValueAtTime(240, t + dur);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0008, t);
-    g.gain.exponentialRampToValueAtTime(0.22, t + dur * 0.45);
-    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    src.connect(flt).connect(g).connect(L.world);
-    const s = ctx.createGain();
-    s.gain.value = 0.4;
-    g.connect(s).connect(verbSend);
-    src.start(t, Math.random() * L.brown.duration);
-    src.stop(t + dur + 0.1);
-  }
-
-  /* ---- EL ALBEDO SE RASGA ----
-     Hermano del pelado, pero el albedo es ESPONJA, no fibra: más grave, más
-     sordo, mordidas más blandas y más juntas. Si sonara igual que la cáscara,
-     los dos movimientos serían el mismo movimiento hecho dos veces. */
-  function evBare() {
-    const t = ctx.currentTime;
-    const dur = 1.3;
-    const v = noiseVoice(L.pink, 'bandpass', 420, 1100, 2.4, dur, 0.5, t);
-    const g = v.g.gain;
-    g.setValueAtTime(0.0008, t);
-    g.exponentialRampToValueAtTime(0.17, t + 0.6);
-    for (let i = 0; i < 17; i++) {
-      const a = t + 0.05 + (i / 17) * (dur - 0.2);
-      const lvl = 0.05 + 0.12 * (i / 17);
-      g.setValueAtTime(lvl * rnd(0.6, 1), a);
-      g.setValueAtTime(lvl, a + 0.02);
-    }
-    g.exponentialRampToValueAtTime(0.0008, t + dur);
-  }
-
-  /* ---- LOS GAJOS SE DESPLIEGAN ----
-     Diez carpelos separándose, y por eso son DIEZ sonidos y no uno. Cada uno es
-     un micro-desgarro húmedo, y van subiendo de altura a medida que se abren —
-     lo que queda por separar es cada vez menos, y menos material suena más
-     agudo. Es el sonido de abrir una naranja con las manos, que cualquiera
-     reconoce sin poder decir por qué. */
-  function evFan() {
-    const t = ctx.currentTime;
-    for (let i = 0; i < 10; i++) {
-      const a = when(t + (i / 10) * 1.15 + rnd(-0.02, 0.02));
-      const hz = 900 * Math.pow(1.09, i);
-      const v = noiseVoice(L.pink, 'bandpass', hz, hz * 1.5, 7, 0.14, 0.45, a);
-      const g = v.g.gain;
-      g.setValueAtTime(0.0008, a);
-      g.exponentialRampToValueAtTime(rnd(0.05, 0.09), a + 0.02);
-      /* Dos mordidas por gajo: un tabique cede en dos tiempos, no en uno. */
-      g.setValueAtTime(0.03, a + 0.05);
-      g.exponentialRampToValueAtTime(0.0008, a + 0.14);
-    }
-  }
-
   /* ---- UN PÁJARO ----
+     No es una transformación: es un habitante. No depende del scroll y por eso
+     sigue siendo un evento — un pájaro canta cuando quiere, no cuando lo mirás.
+
      Lo que hace que un silbido suene a pájaro y no a un theremín es que la
      altura NO SE QUEDA QUIETA en ningún momento: cada sílaba es un glissando
-     corto, y las sílabas van encadenadas sin silencio adentro. Una nota plana,
-     aunque tenga vibrato, suena a máquina.
-
-     Va altísimo —dos a cinco kilohercios— porque ahí es donde canta un pájaro
-     chico, y es justo la banda donde ni las camas ni el piano tienen nada. Se
-     mete solo en el hueco que dejaron los otros, sin pelear con nadie. */
+     corto y van encadenadas sin silencio adentro. Va altísimo —dos a cinco
+     kilohercios— porque ahí canta un pájaro chico, y es justo la banda donde ni
+     las camas ni el piano tienen nada: se mete solo en el hueco que dejaron los
+     demás. */
   function evBird(at) {
     const t = when(at);
     const n = 2 + ((Math.random() * 3) | 0);
@@ -957,7 +951,6 @@ export function createAudio() {
     for (let i = 0; i < n; i++) {
       const dur = rnd(0.07, 0.16);
       const f0 = base * rnd(0.86, 1.18);
-      /* Sube o baja, pero nunca se queda: es lo único que importa. */
       const f1 = f0 * (Math.random() < 0.6 ? rnd(1.15, 1.5) : rnd(0.65, 0.87));
       const o = ctx.createOscillator();
       const g = ctx.createGain();
@@ -979,40 +972,234 @@ export function createAudio() {
     }
   }
 
-  /* ---- LA SEMILLA SE SUELTA ----
-     El último sonido de la vuelta, y por eso el más difícil de acertar: si
-     suena a final, la pieza termina, y la pieza NO termina — esa semilla es la
-     que va a estar cayendo en el primer cuadro de la vuelta siguiente. Así que
-     tiene que sonar a que algo se desprende y queda disponible: limpio, corto,
-     agudo, con cola larga y nada de peso.
-
-     Y la altura es LA TÓNICA, la misma de la que sale toda la armonía. Es lo
-     único de la pieza que se permite un guiño: la semilla suena la nota con la
-     que la música va a volver a empezar. */
-  function evRelease() {
-    const t = ctx.currentTime;
-    /* El desprendimiento: húmedo y brevísimo. */
-    const v = noiseVoice(L.pink, 'bandpass', 2400, 3600, 8, 0.07, 0.4, t);
-    decay(v.g.gain, t, 0.07, 0.11, 0.003);
-    /* Y la nota. Dos parciales nada más: esto no es un instrumento, es una
-       campanita. */
-    for (const [mul, lvl, dur] of [[8, 0.075, 2.8], [16.05, 0.022, 1.4]]) {
-      const o = ctx.createOscillator();
+  /* ---- construir las capas ----
+     Cada flujo tiene su propia fuente de ruido en bucle, y eso es una decisión
+     con costo: son dieciséis fuentes corriendo siempre. Compartir una sola
+     entre todas habría sido más barato, pero las capas que suenan juntas
+     —la raíz y el tallo turnándose, el pelado y la cáscara yéndose— quedarían
+     con ruido CORRELACIONADO, que se oye como una sola cosa filtrada de dos
+     maneras en vez de dos cosas distintas. El costo real de una fuente en
+     bucle es una lectura de memoria por sample en el audio thread; el main ni
+     se entera, que es la regla 2 del archivo. */
+  function buildFlows() {
+    for (const f of FLOWS) {
+      const src = ctx.createBufferSource();
+      src.buffer = f.buf === 'brown' ? L.brown : L.pink;
+      src.loop = true;
+      const flt = ctx.createBiquadFilter();
+      flt.type = f.type;
+      flt.frequency.value = f.hz[0];
+      flt.Q.value = f.q;
       const g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.value = TONIC * mul;
-      g.gain.setValueAtTime(0.0008, t);
-      g.gain.exponentialRampToValueAtTime(lvl, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-      o.connect(g).connect(L.world);
-      const s = ctx.createGain();
-      s.gain.value = 0.75;
-      g.connect(s).connect(verbSend);
-      o.start(t);
-      o.stop(t + dur + 0.1);
+      g.gain.value = 0;
+      src.connect(flt).connect(g).connect(L.world);
+      if (f.send) {
+        const s = ctx.createGain();
+        s.gain.value = f.send;
+        g.connect(s).connect(verbSend);
+      }
+      /* Cada una entra en un punto distinto del mismo buffer: si todas
+         arrancaran en cero, las que comparten material se sumarían en fase. */
+      src.start(0, Math.random() * src.buffer.duration);
+      f.src = src; f.flt = flt; f.g = g;
+      /* El estado del flujo: dónde estaba la señal, a qué velocidad va, y
+         cuánta fibra lleva acumulada sin romper. */
+      f.prev = 0; f.vel = 0; f.acc = 0; f.grains = 0;
     }
   }
 
+  /* ---- un grano: una fibra cediendo ----
+     Es lo único de la pieza que crea nodos fuera del planificador, y por eso
+     está acotado: como mucho tres por cuadro. La tasa sale del movimiento, así
+     que un scrub violento pediría cientos y el tope los recorta — se pierde
+     densidad, no se pierde el frame. */
+  /* ---- LA VENTANA DEL GRANO ----
+     Ochenta puntos de una campana de Hann, calculada una vez. Es el arreglo más
+     importante de este archivo y conviene entender por qué.
+
+     Los granos atacaban con una rampa exponencial de cuatro milisegundos, o sea
+     casi un escalón. Y un escalón tiene ESPECTRO PLANO: cada grano metía su
+     propio clic de banda ancha. Cien granos por segundo de eso no suenan a
+     hojas, suenan a RUIDO BLANCO — que es exactamente lo que se escuchaba.
+
+     Una ventana de Hann no tiene esquinas: empieza en cero con derivada cero y
+     termina igual. El grano no aporta nada más que su propio contenido, y ahí
+     recién se oye lo que el grano ES en vez de oír el borde. */
+  const HANN = (() => {
+    const n = 80, w = new Float32Array(n);
+    for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
+    return w;
+  })();
+
+  const pick = a => a[(Math.random() * a.length) | 0];
+
+  /* ---- un grano ----
+     Un resonador excitado por un chispazo de ruido, que es síntesis modal
+     escrita con los nodos que hay: un pasabanda de Q alto golpeado por un
+     impulso corto ES un oscilador amortiguado. Con Q bajo el resultado es una
+     banda de ruido —viento— y con Q alto es una nota con cuerpo. Ésa es toda la
+     diferencia entre lo que ensuciaba y lo que no.
+
+     Y AFINADO. Cuando `spec.tuned` está puesto, la altura del grano sale del
+     ACORDE QUE EL PIANO ESTÁ TOCANDO en este momento. Es el cambio que hace que
+     el mundo deje de ensuciar la música y pase a formar parte de ella: las
+     hojas ya no son una banda de ruido encima del acorde, son el acorde dicho
+     por otra cosa. Es lo mismo que hace un buen diseño de sonido de película
+     cuando afina los ambientes a la tonalidad de la escena. */
+  function grain(spec, s) {
+    const src = ctx.createBufferSource();
+    src.buffer = spec.buf === 'brown' ? L.brown : L.pink;
+    src.loop = true;
+    const flt = ctx.createBiquadFilter();
+    flt.type = spec.type;
+    flt.Q.value = spec.q;
+
+    if (spec.tuned) {
+      const set = chordNow || CHORDS.am9;
+      const oct = spec.oct[0] + ((Math.random() * (spec.oct[1] - spec.oct[0] + 1)) | 0);
+      flt.frequency.value = TONIC * Math.pow(2, pick(set) / 12 + oct);
+    } else {
+      /* Sin afinar, la altura sigue el avance de la transformación: las
+         primeras fibras de una cáscara no suenan como las últimas. */
+      flt.frequency.value = spec.hz[0] + (spec.hz[1] - spec.hz[0]) * s;
+    }
+
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+
+    /* EL TAMAÑO SIGUE UNA LEY DE POTENCIAS, y no es una decoración
+       estadística: los sistemas que crujen —papel arrugándose, una cáscara
+       cediendo, la corteza terrestre— responden con eventos discretos cuyos
+       tamaños se distribuyen así. Muchos chiquitos, pocos grandes, alguno
+       enorme. Es la misma ley que cuenta los terremotos.
+
+       Con tamaños parejos, que es lo que había, cien granos suenan a una
+       máquina emitiendo cien veces lo mismo. Con ley de potencias suenan a algo
+       que se está rompiendo. */
+    const size = Math.pow(Math.random(), 2.6);
+
+    /* DOS COMPENSACIONES, y sin ellas los granos no se oyen. Las dos salen de
+       cómo funcionan las herramientas, no del gusto:
+
+         POR EL Q — un pasabanda deja pasar un ancho de banda proporcional a
+         `f0/Q`, así que subir el Q de 6 a 26 para ganar altura definida tiró la
+         energía a la cuarta parte. La potencia que pasa va con 1/Q, entonces la
+         amplitud se recupera con la raíz. Sin esto, "más armonioso" significa
+         "más callado", que fue exactamente lo que pasó.
+
+         POR LA VENTANA — una campana de Hann vale 0.5 de media y llega al pico
+         a la mitad del grano, no al principio. Comparada con la envolvente
+         anterior —que saltaba al pico en cuatro milisegundos— entrega bastante
+         menos, aunque suene mucho mejor. */
+    const qComp = Math.sqrt(spec.q / 6);
+    const lvl = spec.lvl * (0.25 + 2.4 * size) * qComp * 1.7;
+    /* Y los grandes duran más que los chicos, como en cualquier cosa que cede:
+       una fibra gruesa tarda más en romperse. */
+    const dur = spec.dur * (0.55 + 1.5 * size);
+
+    /* La campana, escalada al nivel de este grano. Sin ataque y sin caída
+       programados aparte: la ventana ES la envolvente. */
+    const env = new Float32Array(HANN.length);
+    for (let i = 0; i < HANN.length; i++) env[i] = HANN[i] * lvl;
+    g.gain.setValueAtTime(0, t);
+    g.gain.setValueCurveAtTime(env, t, dur);
+
+    src.connect(flt).connect(g).connect(L.world);
+    if (spec.send) {
+      const sn = ctx.createGain();
+      sn.gain.value = spec.send;
+      g.connect(sn).connect(verbSend);
+    }
+    src.start(t, Math.random() * src.buffer.duration);
+    src.stop(t + dur + 0.05);
+  }
+
+  /* ---- EL CUERPO DE LA NARANJA QUE SE ACERCA ----
+     Lo que reemplaza al trueno. Una masa que viene hacia uno no es turbulencia:
+     es un CUERPO, y un cuerpo tiene armónicos, no ruido. Son tres notas graves
+     del acorde que está sonando, hinchándose juntas.
+
+     Y es un flujo, no un evento: se lo llama de a pedacitos mientras la fruta
+     avanza, así que si el lector frena, deja de crecer. Cada llamada es un
+     pulso corto que se solapa con el anterior, y la suma de pulsos solapados es
+     una masa continua que sigue al scroll — que es la misma idea de los granos,
+     con granos largos y afinados en vez de cortos y secos. */
+  function enterBody(s, drive) {
+    const t = ctx.currentTime;
+    const set = chordNow || CHORDS.am9;
+    const dur = rnd(0.9, 1.5);
+    /* Sube de registro mientras se acerca: no de altura musical —sigue siendo
+       el mismo acorde— sino de octava, así que crece sin desafinar contra el
+       piano. */
+    const oct = s < 0.45 ? 0 : 1;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = TONIC * Math.pow(2, pick(set) / 12 + oct);
+    o.detune.value = rnd(-6, 6);
+    const lvl = 0.10 * drive * (0.45 + 0.9 * s);
+    g.gain.setValueAtTime(0.0008, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, lvl), t + dur * 0.45);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+    o.connect(g).connect(L.world);
+    const sn = ctx.createGain();
+    sn.gain.value = 0.4;
+    g.connect(sn).connect(verbSend);
+    o.start(t);
+    o.stop(t + dur + 0.1);
+  }
+
+  /* ---- el frame de los flujos ----
+     Corre dentro de `tick`, o sea sesenta veces por segundo, y todo lo que hace
+     por capa son dos `setTargetAtTime`. Los granos son la excepción y están
+     topeados. */
+  function flowTick(sig, t) {
+    for (const f of FLOWS) {
+      const s = clamp(sig[f.key] || 0);
+
+      /* La derivada, multiplicada por el largo de la transformación. Ver la
+         nota de arriba: sin ese factor, la fruta acercándose sería treinta
+         veces más fuerte que la raíz creciendo por el solo hecho de durar
+         menos. */
+      let d = Math.abs(s - f.prev) * f.span;
+      f.prev = s;
+      /* El pliegue del bucle y los saltos de scroll no son movimiento. */
+      if (d > JUMP * f.span) d = 0;
+
+      /* Sube en tres cuadros, baja en medio segundo. La asimetría ES la cola:
+         al frenar, la fibra sigue cediendo sola un rato en vez de cortarse. */
+      f.vel += (d - f.vel) * (d > f.vel ? RISE : FALL);
+
+      const drive = clamp(f.vel / VEL_REF);
+      f.g.gain.setTargetAtTime(drive * f.gain, t, 0.04);
+      /* El timbre evoluciona DENTRO de la transformación: la cáscara no suena
+         igual recién abierta que a la mitad. */
+      f.flt.frequency.setTargetAtTime(f.hz[0] + (f.hz[1] - f.hz[0]) * s, t, 0.08);
+
+      /* La naranja acercándose necesita CUERPO, no ruido, así que además de su
+         hilo de textura suelta notas graves del acorde mientras avanza. Va acá
+         y no en la tabla porque es la única capa que no se hace con ruido. */
+      if (f.key === 'enter' && drive > 0.05) {
+        f.acc += drive * 0.09;
+        if (f.acc >= 1) { f.acc -= 1; enterBody(s, drive); }
+        continue;
+      }
+
+      if (!f.rate) continue;
+      /* Las fibras. Se acumulan con el movimiento y se rompen de a una: sin
+         scroll no se rompe ninguna, y yendo para atrás se rompen igual porque
+         la velocidad es absoluta. Eso es la cáscara volviéndose a poner. */
+      f.acc += d * f.rate;
+      let n = 0;
+      while (f.acc >= 1 && n < 3) {
+        f.acc -= 1; n++;
+        grain(f.grain, s);
+        f.grains++;
+        if (f.spray && f.grains % f.spray.every === 0) grain(f.spray, s);
+      }
+      if (f.acc > 3) f.acc = 3;
+    }
+  }
 
   /* ============ el pedal: cambiar de acorde sin cortar ============
      No hay ataque. Un acorde no empieza: se convierte en el siguiente. Lo único
@@ -1243,89 +1430,43 @@ export function createAudio() {
     }
   }
 
-  /* ============ qué dispara cada hecho ============
-     Un golpe suena cuando una señal del motor CRUZA un umbral hacia arriba. No
-     cuando está por encima: cuando lo cruza. La diferencia es todo, porque el
-     lector puede quedarse parado justo en el borde con el temblor del trackpad
-     y sin la distinción eso dispararía veinte veces por segundo.
-
-     Ninguno de estos umbrales inventa un momento. Casi todos leen una rampa que
-     el motor ya usa para dibujar: `enter` es la fruta llegando, `peel` la
-     cáscara abriéndose, `fan` los carpelos separándose. El sonido y el dibujo
-     no pueden desincronizarse porque son el mismo número. */
+  /* ============ qué dispara los dos contactos ============
+     Quedan dos umbrales en toda la pieza, y no es poco código borrado: eran
+     diez, y nueve de ellos se volvieron flujos. Un contacto suena cuando una
+     señal CRUZA su umbral hacia arriba — no cuando está por encima, cuando lo
+     cruza. La distinción importa porque el lector puede quedarse quieto justo
+     en el borde con el temblor del trackpad, y sin ella eso dispararía veinte
+     veces por segundo. */
   const HITS = [
-    /* La caída de la semilla ocupa el primer 0.05 del ciclo, así que el
-       impacto va al final de ese tramo y no al principio. */
-    { key: 'fall',    read: (p, s) => p,       thr: 0.047, fire: evSeedFall },
-    { key: 'split',   read: (p, s) => p,       thr: 0.062, fire: evSeedSplit },
-    /* La flor: apenas abre, no cuando está abierta del todo. */
-    { key: 'bloom',   read: (p, s) => s.bloom, thr: 0.08,  fire: evBloom },
-    /* Y los pétalos caen cuando `bloom` ya viene cayendo — por eso éste lee `p`
-       directo: es el único que ocurre en la BAJADA de una curva, y detectarlo
-       como cruce hacia arriba de la curva invertida sería más difícil de leer
-       que poner el número. */
-    { key: 'petals',  read: (p, s) => p,       thr: 0.612, fire: evPetalFall },
-    /* Apenas arranca la llegada: el sonido tiene que acompañar el movimiento
-       entero, no anunciarlo cuando ya terminó. */
-    { key: 'arrive',  read: (p, s) => s.enter, thr: 0.02,  fire: evArrive },
-    { key: 'peel',    read: (p, s) => s.peel,  thr: 0.04,  fire: evPeel },
-    { key: 'turn',    read: (p, s) => s.turn,  thr: 0.04,  fire: evTurn },
-    { key: 'bare',    read: (p, s) => s.bare,  thr: 0.04,  fire: evBare },
-    { key: 'fan',     read: (p, s) => s.fan,   thr: 0.03,  fire: evFan },
-    { key: 'release', read: (p, s) => s.rel,   thr: 0.04,  fire: evRelease },
+    /* La semilla llega al suelo al final de su caída. */
+    { key: 'rest', read: s => s.fall, thr: 0.985, fire: evSeedRest },
+    /* Y se suelta del gajo al final de la vuelta. */
+    { key: 'release', read: s => s.rel, thr: 0.30, fire: evRelease },
   ];
-
-  /* LOS FLUSH. `SHOOT` no es una rampa: son escalones, porque el cítrico se
-     construye en pulsos —crece la raíz o crece el brote, nunca los dos a la
-     vez— y cada escalón es un brote nuevo con su madera y sus hojas.
-
-     Estos umbrales son las mesetas de esa curva. No están elegidos a ojo: son
-     los valores donde `SHOOT` se planta antes de dar el próximo salto. */
-  const FLUSH = [0.05, 0.10, 0.22, 0.34, 0.47, 0.60, 0.72, 0.84];
 
   /* Cuánto tiene que bajar una señal por debajo del umbral para volver a
      armarse. Es la histéresis, y sin ella el borde se vuelve un tartamudeo. */
-  const ARM = 0.012;
+  const ARM = 0.02;
 
-  function rearm(p, sig) {
-    for (const e of HITS) armed[e.key] = e.read(p, sig) < e.thr;
-    for (let i = 0; i < FLUSH.length; i++) armed['fl' + i] = sig.shoot < FLUSH[i];
+  function rearm(sig) {
+    for (const e of HITS) armed[e.key] = e.read(sig) < e.thr;
   }
 
   function fireEvents(p, sig) {
     /* Dos cosas que NO son un recorrido y no tienen que disparar nada: el
        pliegue del bucle, que manda `pe` de 0.95 a 0 de un frame al otro, y un
        salto de scroll grande. Un salto de más de medio ciclo no es alguien
-       recorriendo la pieza, es un corte — y disparar diez sonidos juntos al
-       aterrizar sería la peor forma posible de llegar a ningún lado. */
+       recorriendo la pieza, es un corte. */
     if (pPrev < 0 || Math.abs(p - pPrev) > 0.5) {
       pPrev = p;
-      rearm(p, sig);
+      rearm(sig);
       return;
     }
-
     for (const e of HITS) {
-      const v = e.read(p, sig);
+      const v = e.read(sig);
       if (!armed[e.key]) { if (v < e.thr - ARM) armed[e.key] = true; continue; }
       if (v >= e.thr) { armed[e.key] = false; e.fire(); }
     }
-
-    /* Cada flush: primero la madera, y el follaje DESPUÉS. Ese medio segundo de
-       distancia no es un adorno rítmico — es el orden en que ocurre. Primero
-       hay rama, después hay hoja; una hoja no se abre en el aire. */
-    for (let i = 0; i < FLUSH.length; i++) {
-      const k = 'fl' + i;
-      if (!armed[k]) { if (sig.shoot < FLUSH[i] - ARM) armed[k] = true; continue; }
-      if (sig.shoot >= FLUSH[i]) {
-        armed[k] = false;
-        const at = ctx.currentTime;
-        evBranch(i / FLUSH.length, at);
-        /* Los primeros flush casi no tienen hojas y los últimos son una copa
-           entera: el follaje crece con el árbol, como corresponde. */
-        evFoliage(0.35 + 0.65 * (i / (FLUSH.length - 1)), at + rnd(0.35, 0.6));
-      }
-    }
-
     pPrev = p;
   }
 
@@ -1366,39 +1507,16 @@ export function createAudio() {
     L.voices.gain.setTargetAtTime(env(VOICE, p) * 0.5, t, G);
     L.padBus.gain.setTargetAtTime(env(PAD, p), t, G);
 
-    /* ---- LAS DOS FRICCIONES ----
-       Lo único de la pieza que suena mientras algo se MUEVE, y no cuando algo
-       ocurre. La raíz y el brote no hacen un ruido al empezar: hacen ruido
-       mientras avanzan, y se callan cuando se detienen.
+    /* ---- TODO LO QUE SE MUEVE ----
+       Dieciséis capas, y por capa dos `setTargetAtTime`. El presupuesto sigue
+       siendo despreciable al lado de un frame de dibujo, que es la idea de
+       siempre: lo caro lo hace el audio thread.
 
-       Y lo que manda no es cuánto creció sino CUÁN RÁPIDO está creciendo — la
-       derivada, no el valor. Con el valor, un árbol grande sonaría fuerte para
-       siempre; con la derivada, el sonido existe sólo mientras hay movimiento,
-       que es lo que hace la fricción de verdad.
-
-       De acá sale gratis algo que vale la pena mirar: como el motor alterna los
-       dos flujos —el cítrico crece de raíz o de brote, nunca los dos a la vez—
-       las dos capas se van turnando solas. Nadie lo programó. Está en la forma
-       de las curvas, y el sonido simplemente lo delata.
-
-       El suavizado es fuerte (0.09) porque la derivada por frame es ruidosa: sin
-       filtrar, cualquier tirón del trackpad sería un golpe de ruido. */
-    const dRoot = Math.abs(sig.root - rootPrev);
-    const dShoot = Math.abs(sig.shoot - shootPrev);
-    rootPrev = sig.root;
-    shootPrev = sig.shoot;
-    /* El pliegue del bucle manda las señales de 1 a 0 de un frame al otro. Eso
-       es un salto, no un crecimiento, y sin este descarte sonaría como si el
-       árbol entero creciera de golpe justo en la costura. */
-    if (dRoot < 0.02) rootVel += (dRoot - rootVel) * 0.09;
-    if (dShoot < 0.02) shootVel += (dShoot - shootVel) * 0.09;
-
-    L.dig.g.gain.setTargetAtTime(clamp(rootVel * 320) * 0.16, t, 0.10);
-    L.rise.g.gain.setTargetAtTime(clamp(shootVel * 320) * 0.10, t, 0.10);
-    /* El brote se abre de espectro a medida que sube: fibra tierna abajo,
-       madera arriba. Es el mismo criterio que abre el filtro del viento con el
-       tamaño de la copa. */
-    L.rise.flt.frequency.setTargetAtTime(420 + 760 * sig.shoot, t, 0.25);
+       Acá vivían dos fricciones sueltas —la raíz y el tallo— escritas a mano.
+       Ahora son dos filas de una tabla de dieciséis, y con el normalizador
+       arreglado: el factor que tenían estaba calibrado como si el scroll fuera
+       veinte veces más rápido, y por eso las raíces no se escuchaban. */
+    flowTick(sig, t);
 
     /* El planificador necesita saber dónde está parado el lector, y `tick` es lo
        único que lo sabe. Se guardan y no se usan acá: el que los lee corre en su
@@ -1482,7 +1600,9 @@ export function createAudio() {
     document.removeEventListener('visibilitychange', onVis);
     stopEnsemble();
     if (!built) return;
-    for (const n of [L.earth, L.air, L.bugs, L.night, L.dig, L.rise]) { try { n.src.stop(); } catch {} }
+    for (const n of [L.earth, L.air, L.bugs, L.night]) { try { n.src.stop(); } catch {} }
+    /* Las dieciséis capas de movimiento tampoco tienen final propio. */
+    for (const f of FLOWS) { try { f.src.stop(); } catch {} }
     for (const o of [L.chirp, L.drift]) { try { o.stop(); } catch {} }
     /* Las catorce cuerdas del pedal no tienen final propio: se encienden al
        construir y suenan hasta acá. */
