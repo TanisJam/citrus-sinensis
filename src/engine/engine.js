@@ -661,10 +661,158 @@ function buildWorld(){
   });
 }
 
+/* ============ calibración: qué puede pagar ESTA máquina ============
+   El costo de un cuadro caro se parte en dos mitades que no se comportan igual.
+   Lo que se paga por ORDEN —armar mil doscientos caminos de hoja, uno por uno—
+   no cambia con la resolución. Lo que se paga por PÍXEL —el cielo, el suelo, la
+   composición de la capa, la lámina rasterizada— crece con el cuadrado del DPR.
+   Medido: bajar de DPR 2 a 1 no compró nada en pantalla chica con la máquina
+   libre (5.0 → 5.3 ms, o sea ruido) y cortó a la mitad en 2560×1440 con el
+   procesador ahogado (63 → 33 ms). La palanca sirve cuando el cuello es de
+   píxeles, y no antes.
+
+   Y HAY UN LÍMITE DURO SOBRE LO QUE SE PUEDE AVERIGUAR ACÁ, que costó tres
+   intentos descubrir. Desde el hilo principal la mitad de píxeles NO SE VE:
+   rellenar la pantalla entera tres veces mide CERO milisegundos, a cualquier
+   resolución, porque el rasterizado lo hace la placa y canvas devuelve el
+   control apenas encoló la orden. Forzar la lectura de un píxel la revela
+   —a DPR 2 el relleno cuesta 3.9× lo que a DPR 1, que es casi el 4× teórico—
+   pero de paso serializa contra la placa e infla el total unas diez veces, así
+   que sirve para una PROPORCIÓN y nunca para un pronóstico en milisegundos.
+   El primer intento pronosticaba milisegundos con ese número y elegía al revés:
+   bajaba la resolución en el portátil libre —que iba a 60 cuadros sobrado— y la
+   dejaba entera en el monitor grande, que es el único caso que la necesitaba.
+
+   Entonces acá se mide sólo lo que se puede medir de verdad: el costo por ORDEN,
+   sin lectura de píxel y sin inventar nada. Eso dice qué tan rápida está la
+   máquina AHORA —que no es lo mismo que qué máquina es: la misma midió 12 ms y
+   5 ms con media hora de diferencia según qué tenía abierto—. La mitad de
+   píxeles no se pronostica: se le pone un techo aritmético al lienzo, y lo que
+   ese techo no acierte lo corrige el vigilante de abajo, mirando cuadros reales.
+
+   Es invisible: corre antes del primer cuadro, sobre el lienzo de descarte que
+   ya existe, y lo que quede ahí lo borra el primer `frame()`. */
+const CAL_N=420;        // hojas de muestra
+const CAL_S=28;         // tamaño de hoja en las ventanas caras (15 px de mundo × cámara 2.1, medido)
+/* Cuánto tarda esta máquina —un portátil de gama alta, sin carga— en encolar las
+   420 hojas de muestra: medido con ESTA `leafShape` y no con una simplificada,
+   que fue el primer error y daba la vara 2.4 veces corta. Es la referencia:
+   `CAL_REF / lo medido` da un factor de velocidad, 1 acá y menos en cualquier
+   cosa más lenta. Con el procesador ahogado cuatro veces, mide 0.22. */
+const CAL_REF=1.55;
+/* Píxeles de lienzo que una máquina de velocidad 1 sostiene sin despeinarse.
+   Sale de la tabla medida: 1440×900 a DPR 2 son 5.2 M y va a 60 cuadros; el
+   mismo motor en 2560×1440 a DPR 2 son 14.7 M y el cuadro se va a 27 ms. El
+   techo se pone en el medio y se escala con la velocidad de la máquina. */
+const CAL_PX=8e6;
+/* Colores de mentira, del mismo tipo que los de verdad: lo que se cronometra es
+   la forma, y a la forma le da igual de qué verde sea. */
+const CAL_C=['#5F7F3E','#4C6A32','#6B5A3A','#6F8B47','#3E5626','#B9CE93','#8FA85E'];
+let calSpeed=0, calDone=false;
+
+function calDraw(){
+  const prev=ctx; ctx=offCtx;                    // `leafShape` dibuja sobre `ctx`, que es mutable justo para esto
+  for(let i=0;i<CAL_N;i++){
+    const u=(i*0.6180339887)%1;                  // áureo: reparte sin repetir ni agrupar
+    leafShape(u*W,(i*CAL_S*1.7)%H,u*6.283,CAL_S,CAL_C,2,0.82);
+  }
+  ctx=prev;
+}
+function calibrate(){
+  try{
+    if(!offCtx||!(offCv.width>0)) return;
+    if(typeof performance!=='object'||typeof performance.now!=='function') return;
+    offCtx.setTransform(1,0,0,1,0,0);
+    offCtx.clearRect(0,0,offCv.width,offCv.height);
+    offCtx.setTransform(DPR,0,0,DPR,0,0);
+    calDraw();                                   // en frío: la primera pasada paga compilar los caminos
+    const t0=performance.now();
+    for(let r=0;r<3;r++) calDraw();
+    const ms=(performance.now()-t0)/3;
+    /* Reloj congelado —los tests mueven `performance.now()` a mano— o cronómetro
+       sin resolución. Sin medición no hay decisión: se queda con el DPR del
+       dispositivo, que es lo que hacía antes de todo esto. */
+    if(!(ms>0)) return;
+    calSpeed=CAL_REF/ms; calDone=true;
+    /* Y acá la calibración hace lo único que el vigilante NO puede hacer:
+       arrancar ya rebajado. La pieza empieza barata —0.2 ms de JS en el primer
+       tercio, medido— así que una máquina lenta no da ninguna señal hasta que la
+       copa entra en cuadro, y para entonces el espectador ya vio el tirón. Esto
+       mide exactamente el costo por ORDEN, que es lo que la copa cobra, así que
+       es la única parte del problema sobre la que este número tiene autoridad.
+       Los cortes salen de la medición: con el procesador ahogado cuatro veces
+       mide 0.22 y a esa velocidad se pierde el 13% de los cuadros. */
+    if(!QF) qLevel = calSpeed<0.15 ? 2 : calSpeed<0.35 ? 1 : 0;
+    if(DEBUG) console.log('[cal]',{ms:ms.toFixed(2),velocidad:calSpeed.toFixed(2),copa:qLevel});
+  }catch(e){ calDone=false; }
+  finally{
+    ctx=ctxMain;
+    try{ offCtx.setTransform(1,0,0,1,0,0); offCtx.clearRect(0,0,offCv.width,offCv.height); }catch(e){}
+  }
+}
+
+/* ============ nivel de detalle de la copa ============
+   La segunda palanca, y la que hace falta cuando la primera no alcanza: en
+   pantalla chica con procesador lento bajar la resolución no compró NADA
+   —13.0% de cuadros perdidos contra 12.7%— porque ahí el cuello no es de
+   píxeles, es de órdenes. Y las órdenes son la copa: 1254 hojas por cuadro,
+   siempre, medido.
+
+   Lo que hace que esto se pueda pagar barato es un detalle medido que no se ve
+   mirando el código: las 1254 hojas cruzan el umbral de detalle JUNTAS. El
+   histograma da 1252 en nivel 1 en pe 0.52 y 1254 en nivel 2 en pe 0.60 — no
+   hay reparto, hay un interruptor, porque en esta cámara todas las hojas miden
+   casi lo mismo en pantalla. Por eso subir el umbral a secas apagaría la
+   nervadura de la copa ENTERA de un cuadro al otro, que se lee como un error de
+   dibujo y no como una pieza que se adapta.
+   Entonces la rebaja es POR HOJA y no por umbral: se le pone techo a la
+   FRACCIÓN de hojas que pueden llegar al nivel completo, y qué hoja entra lo
+   decide su propio número —el mismo que ya le da el escorzo, así que es estable
+   entre cuadros y no titila—. La copa se ralea en vez de apagarse.
+
+   Y HAY QUE EMPUJAR A LA HOJA CORRECTA, que es donde este pase se equivocó
+   primero. Aislando el costo de la copa —midiendo con copa y sin copa, con el
+   procesador ahogado cuatro veces, en pe 0.60— sale así:
+       copa entera en nivel 2 (nervadura) ... 12.8 ms
+       copa entera en nivel 1 (lámina) ...... 10.1 ms   ← sólo 21% menos
+       copa entera en silueta ...............  3.1 ms   ← 69% menos
+   O sea que lo caro de una hoja NO es la nervadura: son las dos mitades de la
+   lámina con su margen cargado. Bajar de nervadura a lámina compra 7% de cuadro
+   y no vale el cambio de dibujo; lo que compra de verdad es aplanar la hoja.
+   Por eso hay dos fracciones y no una: cuántas hojas pueden llegar a nervadura,
+   y cuántas se aplanan del todo.
+
+   El descarte de hojas diminutas es el último escalón y va aparte: `sp < 1.2`
+   no descartó NUNCA una sola hoja en todo el recorrido (medido: cero), así que
+   subirlo a 2.6 es lo único de acá que saca hojas de verdad. */
+let qLevel=0;
+const Q_FLAT=[0,0.35,0.70];    // fracción de hojas que se dibuja como silueta
+const Q_KEEP=[1,0.50,0.20];    // fracción que puede llegar a nervadura completa
+const Q_CULL=[1.2,1.2,2.6];    // píxeles de hoja por debajo de los cuales no se dibuja
+/* `?q=2` fuerza un nivel para poder MIRARLO sin tener que ahogar la máquina.
+   Misma familia que `?at=` y `?hold`: herramienta de taller. */
+const QF=typeof location!=='undefined'&&/[?&]q=([0-2])/.exec(location.search||'');
+if(QF) qLevel=+QF[1];
+
+/* Techo de resolución que impone el vigilante de cuadros reales. Sólo baja: ver
+   abajo por qué no vuelve a subir. */
+let dprRt=2;
+function chooseDPR(){
+  const top=Math.min(devicePixelRatio||1,2);
+  if(!calDone) return Math.min(top,dprRt);
+  /* Escalones de un cuarto, y el piso es 1. Por debajo la línea de la hoja se
+     empasta y deja de ser un dibujo; si a DPR 1 todavía no entra, el problema no
+     son los píxeles y hay que ir a buscarlo a las hojas. */
+  const budget=CAL_PX*Math.min(2,calSpeed);
+  let d=Math.min(top,dprRt);
+  while(d>1.001&&W*H*d*d>budget) d-=0.25;
+  return Math.max(1,d);
+}
+
 /* ============ resize / scroll / puntero ============ */
 function resize(){
-  DPR=Math.min(devicePixelRatio||1,2);
   W=innerWidth;H=innerHeight;
+  DPR=chooseDPR();
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
   offCv.width=cv.width;offCv.height=cv.height;
   cv.style.width=W+'px';cv.style.height=H+'px';
@@ -1921,6 +2069,10 @@ function gustAt(x,t){
 const WGAIN=0.015;
 
 let scaleNow=1;      // escala de cámara del frame, para el LOD de las hojas
+/* Cuántas hojas se dibujaron en el cuadro, y cuántas llegaron a nervadura
+   completa. Es el número con el que se descubrió que la copa entera cruza el
+   umbral junta; sin poder leerlo, la rebaja dinámica es un ajuste a ciegas. */
+let dbgLeaves=0, dbgFull=0, dbgFlat=0;
 let interiorNow=0;   // cuánto avanzó la fase interior, para no pagar de más
 /* Pose en pantalla de la semilla que se va a soltar, publicada por el carpelo
    que la contiene y leída por el viaje del final. Vive fuera porque la escribe
@@ -2165,7 +2317,7 @@ function drawLayer(g,l){
     // funciona una copa — la lámina crece donde hay menos luz que interceptar.
     const s=15*ls*(0.88+0.24*vr)*(1+0.34*sh)*ease(clamp((B[i+3]-0.5)/0.5));
     const sp=s*scaleNow;
-    if(sp<1.2) continue;
+    if(sp<Q_CULL[qLevel]) continue;
     /* Giro sobre el nervio. Iba de 0.28 a 1, o sea que la hoja más de canto se
        aplastaba al 28% de su ancho: a esa compresión una hoja de cítrico deja
        de leerse como hoja y pasa a ser una astilla, y la copa se llenaba de
@@ -2186,9 +2338,13 @@ function drawLayer(g,l){
     // La de sombra es siempre la más vieja: nadie renueva el interior.
     let ag=Math.round(Math.max(sh,clamp((B[i+3]-0.5)/0.2))*(LEAF_AGE-1));
     const C=leafPal[(l*LEAF_AGE+ag)*LEAF_BINS+bi];
-    // LOD por tamaño en pantalla: nada de bezier bajo 5 px, nada de nervadura
-    // bajo 12 px. Con esta cámara casi toda la copa vive en el nivel medio.
-    const lod=sp<5?0:sp<12?1:2;
+    /* LOD por tamaño en pantalla: nada de bezier bajo 5 px, nada de nervadura
+       bajo 12 px. Con esta cámara casi toda la copa vive en el nivel medio.
+       El segundo término es la rebaja dinámica: `vr2` es el número propio de
+       esta hoja —el que ya le da el escorzo— así que la misma hoja cae del mismo
+       lado en todos los cuadros. Si se sorteara por cuadro, la copa hervería. */
+    const lod=vr2<Q_FLAT[qLevel]?0:sp<5?0:(sp<12||vr2>=Q_KEEP[qLevel])?1:2;
+    dbgLeaves++; if(lod===2) dbgFull++; else if(lod===0) dbgFlat++;
     leafShape(B[i],B[i+1],a,s,C,lod,roll);
     /* Acá salía una segunda hoja más chica pegada a la primera, que era el
        parche para darle masa a una copa que sólo tenía hojas en las puntas.
@@ -3990,7 +4146,13 @@ function dbgInstrument(on){
 function drawDebug(pe){
   const L=['js '+dbgJs.toFixed(2)+' ms','frame '+dbgFrame.toFixed(1)+' ms',
            'ctx '+dbgShown,'p '+p.toFixed(4)+'  pe '+pe.toFixed(4),
-           'fps '+(dbgFrame>0?(1000/dbgFrame).toFixed(0):'—')];
+           'fps '+(dbgFrame>0?(1000/dbgFrame).toFixed(0):'—'),
+           /* Qué resolución hay puesta, de dónde salió y qué está midiendo el
+              vigilante. Sin esto la decisión es invisible y no hay forma de
+              saber si acertó. */
+           'dpr '+DPR.toFixed(2)+(calDone?'  vel '+calSpeed.toFixed(2):'  sin calibrar'),
+           'ema '+wEma.toFixed(1)+' ms  perdidos '+wBad+'/'+wN,
+           'copa '+qLevel+'  hojas '+dbgLeaves+'  '+dbgFull+' enteras  '+dbgFlat+' planas'];
   ctx.save();ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.globalAlpha=0.82;ctx.fillStyle='#0B0F0C';
   ctx.fillRect(12,12,168,L.length*16+12);
@@ -4002,9 +4164,91 @@ function drawDebug(pe){
   ctx.restore();
 }
 
+/* ============ vigilante de cuadros ============
+   La calibración de arriba mide una máquina quieta y no puede ver los píxeles.
+   Esto ve lo único que importa de verdad: cuánto está tardando la pieza AHORA,
+   con esta ventana, esta cámara y lo que sea que el navegador tenga encima. Si
+   el cuadro se pasa de presupuesto de forma sostenida, se le saca resolución.
+
+   Lo que se cuenta son CUADROS PERDIDOS y no un promedio, y eso también costó
+   una corrección: con promedio corrido bajaba la resolución en el portátil
+   libre, que iba a 60 sobrado. Un promedio lo levanta cualquier cosa —una
+   compilación, una recolección de basura, la pestaña de al lado— y tarda veinte
+   cuadros en volver a bajar. La pregunta no es "cuánto tarda en promedio" sino
+   "¿se está perdiendo el cuadro?", y ésa se contesta contando: sobre doscientos
+   cuadros, cuántos se pasaron del refresco.
+
+   Las otras dos reglas son para que la corrección no se note más que el problema
+   que arregla:
+   - ESCALONES, no rampa. Un ajuste continuo cambia el dibujo todo el tiempo y
+     eso se lee como parpadeo, no como optimización.
+   - NO VUELVE A SUBIR. Es la que más cuesta aceptar y la más importante: si baja
+     porque se pasó y sube porque ahora entra, vuelve a pasarse — y la copa late.
+     La pieza dura un minuto; quedarse un escalón por debajo el resto del
+     recorrido es infinitamente mejor que respirar. */
+const WATCH_BAD=16.7, WATCH_WIN=200, WATCH_MS=2500, WATCH_FEW=24;
+const WATCH_PART=0.30, WATCH_BAAD=0.60, WATCH_COOL=900;
+let wEma=0, wN=0, wBad=0, wT=0, wSkip=1500, wDrops=0;
+function watch(ms,now){
+  wEma = wEma>0 ? wEma+(ms-wEma)*0.12 : ms;      // sólo para el overlay: no decide nada
+  /* El asentamiento —el de arranque y el de después de cada cambio— también va
+     por reloj y no por cuadros, por el mismo motivo que la ventana: ciento veinte
+     cuadros son dos segundos en una máquina sana y OCHO en una ahogada a quince
+     por segundo. Contándolos así, la escalera tardaba media pieza en llegar a la
+     copa: medido, treinta segundos de recorrido y todavía andaba cediendo
+     resolución mientras el espectador veía el tirón. */
+  if(now<wSkip){ wT=now; wN=0; wBad=0; return; }
+  wN++; if(ms>WATCH_BAD) wBad++;
+  /* La ventana se cierra por cuadros O por tiempo, y la segunda condición es la
+     que importa: contando sólo cuadros, una máquina que va a diez por segundo
+     tarda veinte segundos en juntar doscientos — o sea que justo la máquina que
+     necesita ayuda es la última en recibirla. Midiendo por reloj reacciona en
+     dos segundos y medio, que es cuando el problema todavía se puede corregir
+     sin que el espectador ya haya visto media pieza a tirones. */
+  if(wN<WATCH_WIN && !(now-wT>=WATCH_MS && wN>=WATCH_FEW)) return;
+  const bad=wBad, n=wN; wN=0; wBad=0; wT=now;
+  if(bad<n*WATCH_PART) return;
+  /* Menos de un cuadro perdido de cada tres es la pieza respirando, no la
+     máquina ahogándose. Tocar ahí sería cambiar el dibujo por ruido. */
+  /* Y si lo que se está perdiendo es más de la mitad de los cuadros, no alcanza
+     con ceder de a un escalón: a ese ritmo la corrección llega cuando la pieza ya
+     pasó. Se ceden dos de una. */
+  if(!degrade(bad>=n*WATCH_BAAD)){ wSkip=Infinity; return; }   // no queda nada: deja de mirar
+  wSkip=now+WATCH_COOL; wEma=0;
+}
+/* El orden de las palancas es una decisión de PIEZA, no de rendimiento, y va en
+   este orden por lo que cuesta cada una a la vista: primero se cede resolución
+   —el dibujo es el mismo, apenas menos filoso, y en una pieza pintada a mano sin
+   tipografía sobre el lienzo casi no se nota— y sólo cuando eso se agota se
+   empieza a ralear la copa, que sí es cambiar el dibujo.
+   Y si la resolución ya está en el piso —pantalla sin retina, o dos escalones ya
+   cedidos— se salta directo a las hojas, que es exactamente el caso donde los
+   píxeles no compran nada: pantalla chica con procesador lento. */
+function degrade(hard){
+  if(hard&&degradeOne()) return degradeOne()||true;   // dos escalones de una
+  return degradeOne();
+}
+function degradeOne(){
+  if(wDrops<2&&DPR>1.001){
+    dprRt=Math.max(1,Math.min(devicePixelRatio||1,2,dprRt)-0.25);
+    wDrops++;
+    resize();
+    if(DEBUG) console.log('[watch] baja a DPR',DPR.toFixed(2));
+    return true;
+  }
+  if(qLevel<Q_KEEP.length-1){
+    qLevel++;
+    if(DEBUG) console.log('[watch] ralea la copa: nivel',qLevel);
+    return true;
+  }
+  return false;
+}
+
 /* ============ loop ============ */
 let last=performance.now();
 function frame(now){
+  const wT0=performance.now();
+  dbgLeaves=0; dbgFull=0; dbgFlat=0;
   let dbgT=0;
   if(DEBUG){
     dbgFrame=now-dbgLast;dbgLast=now;
@@ -4144,7 +4388,18 @@ function frame(now){
     if(pe<LOOP_LEN){
       drawFallingSeed(pe/LOOP_LEN,camY,hh,carried?'#EFDFB4':null);
     } else {
-      drawRoots(roots,pe,t,camS);
+      /* Las raíces se dibujaban SIEMPRE, incluso con la cámara arriba en la copa
+         y el suelo dos pantallas abajo: 10.6% del cuadro en pe 0.60 y 13% en
+         0.82, medido, gastado en algo que nadie podía ver. No es una rebaja de
+         calidad, es un descarte exacto — las raíces viven por debajo de la línea
+         de tierra, así que si el borde de abajo del encuadre no llega a cruzarla
+         no hay nada ahí para dibujar.
+         El margen es por el cuello, que asoma un poco por encima de la línea.
+         Y ojo con el descarte por vista que YA se probó y no sirvió: aquél
+         proyectaba hoja por hoja dentro de `drawLayer` y no movió un
+         milisegundo. Éste es distinto — descarta un subárbol entero con una
+         comparación, no mil doscientas. */
+      if(view.y1>-2) drawRoots(roots,pe,t,camS);
       if(pe<0.29) drawSeed(pe);
       /* El LOD usa una escala rebajada por el desvanecido: cuando la fruta
          viaja hacia el espectador la cámara se acerca y las hojas subirían a
@@ -4227,12 +4482,21 @@ function frame(now){
     else dbgJs=performance.now()-dbgT;      // frame limpio: sólo el tiempo
     drawDebug(pe);
   }
+  /* Al final del todo y no en el medio: `watch` puede redimensionar el lienzo, y
+     redimensionar lo borra. Si eso pasara antes de dibujar, el cuadro que se
+     acaba de pintar se perdería y el ajuste se vería como un parpadeo negro. */
+  watch(performance.now()-wT0,now);
   requestAnimationFrame(frame);
 }
 
 let rt;
 addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(resize,180);});
-resize();buildWorld();dither=buildDither();grit=buildGrit(0);haze=buildGrit(1);
+/* Primero se mide la máquina y recién después se dimensiona el lienzo: la
+   calibración necesita el lienzo de descarte ya creado, y `resize` necesita
+   saber a qué resolución trabajar. Por eso el doble llamado — el segundo aplica
+   lo que el primero no podía saber. */
+resize();calibrate();if(calDone) resize();
+buildWorld();dither=buildDither();grit=buildGrit(0);haze=buildGrit(1);
 buildBloom();readScroll();p=target;
 if(AT){ p=target=clamp(parseFloat(AT[1])); pPrev=p; }
 requestAnimationFrame(frame);
@@ -4243,7 +4507,12 @@ return {
      —es lo que reemplazó a elegir la fruta con el mouse—. Un invariante que se
      rompe a propósito hay que poder verificarlo, no sólo afirmarlo, así que el
      estado de la elección se puede leer desde afuera. No lo usa la página. */
-  state(){ return {fruit:chosenFruit, gajo:chosenGajo, carried}; },
+  state(){ return {fruit:chosenFruit, gajo:chosenGajo, carried,
+    /* La resolución dejó de ser una constante del dispositivo y pasó a ser una
+       decisión medida. Una decisión que no se puede leer desde afuera no se
+       puede verificar, y ésta hay que poder verificarla en máquinas que no son
+       ésta. */
+    dpr:DPR, calibrated:calDone, speed:calSpeed, frameMs:wEma, drops:wDrops}; },
   destroy(){
     alive=false;
     clearTimeout(rt);
