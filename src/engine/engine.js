@@ -16,9 +16,10 @@
      host.onHud       (snapshot) => void — solo cuando un campo CAMBIA
      host.onAccent    (hex) => void
      host.onTick      (pe, night, interior, sig) => void — TODOS los frames
-                    `sig` es {root, shoot, bloom, enter, peel, exit, turn,
-                    bare, fan, rel}: lo que el cuerpo está haciendo, para que el
-                    sonido no tenga que reimplementar las curvas del motor.
+                    `sig` es {root, shoot, bud, leaf, fall, imbibe, bloom,
+                    enter, peel, exit, turn, bare, fan, open, rel}: lo que el
+                    cuerpo está haciendo, para que el sonido no tenga que
+                    reimplementar las curvas del motor. Todas van de 0 a 1.
                     ES EL MISMO OBJETO EN TODOS LOS FRAMES — leerlo, no guardarlo.
 
    La division no es estetica: los campos del HUD cambian unas pocas veces por
@@ -118,7 +119,8 @@ const onAccent = host.onAccent || noop;
 const onTick   = host.onTick   || noop;
 /* El objeto de señales que viaja al sonido, creado una sola vez. Ver el sitio
    donde se llena, en el emisor de frame. */
-const sig = {root:0,shoot:0,bloom:0,enter:0,peel:0,exit:0,turn:0,bare:0,fan:0,rel:0};
+const sig = {root:0,shoot:0,bud:0,leaf:0,fall:0,imbibe:0,bloom:0,
+             enter:0,peel:0,exit:0,turn:0,bare:0,fan:0,open:0,rel:0};
 const refs     = host.refs     || {};
 
 /* ============ ciclo de vida ============
@@ -546,7 +548,15 @@ function buildTree(seed){
       }
     }
   }
-  return {par,rel,len,dep,ph,leaf,thorn,n,bend,z,lay,spur,
+  /* Cuántas ramas hay en cada nivel. Se cuenta una vez porque el árbol no
+     cambia de forma, y sirve para saber por frame CUÁNTAS ramas están brotando
+     en este instante sin recorrer las mil doscientas: el avance de una rama es
+     `(G - st) / 0.34` con `st` dependiendo sólo de su profundidad, así que ocho
+     multiplicaciones dan el mismo número que mil doscientas comparaciones.
+     Lo consume el sonido, que necesita la textura del crecimiento. */
+  const depN=new Float32Array(TREE_D+1);
+  for(let i=0;i<n;i++) depN[dep[i]]++;
+  return {par,rel,len,dep,ph,leaf,thorn,n,bend,z,lay,spur,depN,
     A:new Float32Array(n),X:new Float32Array(n),Y:new Float32Array(n),G:new Float32Array(n),
     wb:new Float32Array(n),wt:new Float32Array(n),
     th:new Float32Array(n),om:new Float32Array(n)};   // resorte del viento
@@ -4125,6 +4135,32 @@ function updateDOM(pe,u,orange){
      recibe lo lee y lo suelta en la misma llamada. */
   sig.root  = key(ROOT,pe);
   sig.shoot = key(SHOOT,pe);
+  /* La caída de la semilla ocupa el primer tramo del ciclo y después se queda
+     en 1: no vuelve a cero hasta que el bucle pliega, que es exactamente lo que
+     hace el resto de las señales. */
+  sig.fall  = pe<LOOP_LEN ? pe/LOOP_LEN : 1;
+  /* La imbibición: la semilla tomando agua e hinchándose un 30%. Es la misma
+     curva con la que se dibuja, normalizada a 0..1 — el sonido no quiere saber
+     cuánto mide la semilla, quiere saber cuánto avanzó el hinchamiento. */
+  sig.imbibe = (key([[0.05,1],[0.10,1.22],[0.17,1.3]],pe)-1)/0.3;
+  /* CUÁNTAS RAMAS ESTÁN BROTANDO AHORA, y cuántas ya tienen hojas. No es el
+     tamaño del árbol: es cuánta actividad hay en este instante, que es lo que
+     el sonido necesita para que el crecimiento tenga textura en vez de ser una
+     rampa. Ocho pasos por frame, uno por nivel. */
+  let bud=0, lf=0;
+  if(tree&&tree.depN){
+    const G=sig.shoot;
+    for(let d=0;d<=TREE_D;d++){
+      const c=tree.depN[d];
+      if(!c) continue;
+      const gg=(G-(d/TREE_D)*0.66)/0.34;
+      if(gg>0&&gg<1) bud+=c;
+      if(gg>0.5) lf+=c;
+    }
+    bud/=tree.n; lf/=tree.n;
+  }
+  sig.bud   = bud;
+  sig.leaf  = lf;
   /* La flor, con la misma fórmula que abre los pétalos en el dibujo pero sin el
      desfasaje por flor: lo que el sonido quiere saber es si HAY floración, no
      en qué punto está cada corola. */
@@ -4135,6 +4171,7 @@ function updateDOM(pe,u,orange){
   sig.turn  = ramp(pe,IN_TURN);
   sig.bare  = ramp(pe,IN_BARE);
   sig.fan   = ramp(pe,IN_FAN);
+  sig.open  = ramp(pe,IN_OPEN);
   sig.rel   = ramp(pe,IN_REL);
   onTick(pe,nightNow,interiorNow,sig);
 
