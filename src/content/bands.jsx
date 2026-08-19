@@ -99,19 +99,19 @@ export const BANDS = [
         <h2>Writing</h2>
         <ul className="rows">
           <li>
-            <b><a href="https://www.mnr.ar/blog/from-portfolio-to-personal-site/">From portfolio to personal site</a></b>
+            <b><a href="/blog/from-portfolio-to-personal-site/">From portfolio to personal site</a></b>
             <span>Apr 21, 2026</span>
           </li>
           <li>
-            <b><a href="https://www.mnr.ar/blog/leading-internal-tools-for-distributed-teams/">Leading internal tools for distributed teams</a></b>
+            <b><a href="/blog/leading-internal-tools-for-distributed-teams/">Leading internal tools for distributed teams</a></b>
             <span>Apr 18, 2026</span>
           </li>
           <li>
-            <b><a href="https://www.mnr.ar/blog/ai-assisted-workflows-with-engineering-standards/">AI-assisted workflows without losing engineering standards</a></b>
+            <b><a href="/blog/ai-assisted-workflows-with-engineering-standards/">AI-assisted workflows without losing engineering standards</a></b>
             <span>Apr 12, 2026</span>
           </li>
         </ul>
-        <p className="meta"><a href="https://www.mnr.ar/blog">Read the blog →</a></p>
+        <p className="meta"><a href="/blog">Read the blog →</a></p>
       </>
     ),
   },
@@ -132,7 +132,7 @@ export const BANDS = [
         <p className="meta">
           <a href="https://github.com/TanisJam">GitHub</a> ·{' '}
           <a href="https://www.linkedin.com/in/mauricionromero/">LinkedIn</a> ·{' '}
-          <a href="https://www.mnr.ar/resume">Resume</a>
+          <a href="/resume">Resume</a>
         </p>
       </>
     ),
