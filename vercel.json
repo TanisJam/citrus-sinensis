@@ -1,4 +1,12 @@
 {
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "mnr.ar" }],
+      "destination": "https://www.mnr.ar/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.+)",

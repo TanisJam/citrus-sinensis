@@ -171,6 +171,13 @@ rewrites**, así que si el dominio se lo quedara Astro, un rewrite de `/` hacia
 acá no dispararía nunca: su `index.html` existe y gana. El que sirve la raíz
 tiene que ser el dueño del dominio.
 
+El canónico es `www.mnr.ar` —lo dicen el `canonical` y el `og:url` de
+`index.html`— y el apex redirige ahí con un 308. Eso vivía en el proyecto
+anterior como una opción del panel; acá es la primera regla de `vercel.json`,
+condicionada por `host`. Va primero a propósito: los redirects se evalúan antes
+que el filesystem y que los rewrites, así que el salto a `www` ocurre antes de
+que nada más entre a jugar.
+
 De ahí también sale el `assetsDir` propio de `vite.config.js`: cualquier archivo
 que exista en este build gana antes de que el rewrite entre a jugar, y los dos
 proyectos publicaban en `/assets/`.
