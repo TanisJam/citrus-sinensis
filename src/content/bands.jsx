@@ -99,6 +99,10 @@ export const BANDS = [
         <h2>Writing</h2>
         <ul className="rows">
           <li>
+            <b><a href="/blog/an-orange-tree-that-grows-with-scroll/">An orange tree that grows with scroll</a></b>
+            <span>Aug 19, 2026</span>
+          </li>
+          <li>
             <b><a href="/blog/from-portfolio-to-personal-site/">From portfolio to personal site</a></b>
             <span>Apr 21, 2026</span>
           </li>
