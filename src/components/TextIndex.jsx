@@ -47,13 +47,12 @@ export function TextIndex() {
 
       <h2>Elsewhere</h2>
       <ul>
-        <li><a href="https://www.mnr.ar/">Personal site</a></li>
+        <li><a href="/home">Personal site</a></li>
         <li><a href="https://www.mnr.ar/blog">Blog</a></li>
         <li><a href="https://www.mnr.ar/projects">Projects, with full write-ups</a></li>
         <li><a href="https://www.mnr.ar/resume">Resume</a></li>
         <li><a href="https://github.com/TanisJam">GitHub</a></li>
         <li><a href="https://www.linkedin.com/in/mauricionromero/">LinkedIn</a></li>
-        <li><a href="/old">The previous version of this site</a></li>
       </ul>
 
       <h2>Projects</h2>

@@ -34,18 +34,23 @@ export function Brand({ scheme, onHome }) {
 }
 
 /* Tres salidas y nada mas: los dos lugares donde esta el trabajo, y el sitio
-   viejo para quien venia a buscar lo que habia antes.
+   de contenido para quien venia a buscar lo que habia antes.
  *
- * `/old` va con barra inicial. Es la unica de las tres que es del propio sitio,
- * y una relativa sin barra cambia de destino segun desde donde se monte la
- * pieza: `old` desde `/algo/` apunta a `/algo/old`, que no existe. Con barra
- * apunta siempre a la raiz, se sirva desde donde se sirva. */
+ * Ese tercero apunta a `/home` y no a `/old`. `/old` fue el nombre que tuvo
+ * mientras la pieza todavia no era la portada; cuando la portada cambio, el hub
+ * de Astro se mudo a `/home` y esta linea quedo apuntando a una ruta que nunca
+ * existio. Es la misma pagina, con el nombre que realmente tiene.
+ *
+ * Va con barra inicial. Es la unica de las tres que es del propio sitio, y una
+ * relativa sin barra cambia de destino segun desde donde se monte la pieza:
+ * `home` desde `/algo/` apunta a `/algo/home`, que no existe. Con barra apunta
+ * siempre a la raiz, se sirva desde donde se sirva. */
 export function Nav({ scheme }) {
   return (
     <nav className={`nav ${scheme}`}>
       <a href="https://github.com/TanisJam" rel="noopener noreferrer" target="_blank">GitHub</a>
       <a href="https://www.linkedin.com/in/mauricionromero/" rel="noopener noreferrer" target="_blank">LinkedIn</a>
-      <a href="/old">Old site</a>
+      <a href="/home">Old site</a>
     </nav>
   )
 }
