@@ -938,9 +938,46 @@ function chooseDPR(){
   return Math.max(1,d);
 }
 
+/* ============ reencuadre ============
+ * La pieza está compuesta como una lámina: el dibujo en el medio y las cartelas
+ * en los márgenes. Un teléfono en vertical NO TIENE márgenes —una cartela con
+ * medida de lectura ocupa el ancho entero— así que el texto no puede ir al
+ * costado del dibujo. Tiene que ir DEBAJO, y para eso el dibujo tiene que
+ * dejarle el lugar en vez de pelearlo.
+ *
+ * Dos números y nada más, porque toda la proyección pasa por dos cosas: dónde
+ * está el origen del mundo en pantalla (`VX`,`VY`) y a qué escala se dibuja.
+ *
+ *   VY    sube el sujeto. Era `H*0.52` fijo, o sea el medio del cuadro; en
+ *         vertical se corre a la franja de arriba y abajo queda cielo o tierra:
+ *         superficie sin detalle, que es donde el texto puede ir SIN PAPEL.
+ *   FITS  achica el mundo. `CAM_S` es una tabla de escalas ABSOLUTAS, sin
+ *         ningún término de viewport: el encuadre está autorado para una
+ *         ventana ancha y en 390px de ancho el árbol y la lámina final salen
+ *         cortados por los dos costados. Se multiplica una sola vez, donde se
+ *         lee la tabla, y todo lo que proyecta con `camS` queda arreglado.
+ *
+ * En apaisado y en escritorio los dos son los de siempre y no cambia un pixel.
+ */
+let VX=0,VY=0,FITS=1,TF0=0,TF1=1;
+/* La franja de pantalla donde vive el texto, en fracciones de alto. Sale de
+ * acá y no del CSS por una sola razón: el motor la necesita para saber qué
+ * color tiene el fondo DETRÁS del texto, que es lo que decide si el texto va en
+ * tinta o en hueso. Si las dos definiciones vivieran separadas, moverla en el
+ * CSS dejaría el viraje mirando la parte del cuadro equivocada. */
+const TEXT_TOP=0.42,TEXT_BOT=0.88;
+function reframe(){
+  VX=W/2;
+  if(H/W<=1.15){ VY=H*0.52;FITS=1;TF0=0;TF1=1;return; }
+  VY=H*0.24;
+  FITS=0.5;
+  TF0=TEXT_TOP;TF1=TEXT_BOT;
+}
+
 /* ============ resize / scroll / puntero ============ */
 function resize(){
   W=innerWidth;H=innerHeight;
+  reframe();
   DPR=chooseDPR();
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
   offCv.width=cv.width;offCv.height=cv.height;
@@ -1051,6 +1088,28 @@ let pPrev=0,scrollV=0,skipV=false;   // velocidad de scroll, para calmar la noch
    velocidad de lectura cómoda: no molesta scrolleando normal y sólo actúa en
    los tirones. */
 const PMAX=0.09;
+/* Cuánta DEUDA se tolera antes de acelerar el pago.
+ *
+ * El tope de arriba acota la velocidad, y eso alcanza mientras la entrada sea
+ * continua: un trackpad empuja de a poco, la deuda nunca crece, y la pieza va
+ * un pelo atrás como corresponde. Con un dedo la entrada no es continua — es un
+ * envión y el navegador sigue solo—, y ahí un tope fijo de velocidad deja la
+ * deuda SIN ACOTAR: cada arrastre suma un pedazo de ciclo y la pieza lo paga a
+ * 0.09 por segundo, siempre. Los arrastres llegan más rápido de lo que la pieza
+ * paga.
+ * Y se realimenta, que es lo peor: como la pieza no responde, uno arrastra de
+ * nuevo, y cada arrastre empeora exactamente lo que lo causó. Medido en un
+ * iPhone 14: un salto de 10.000px dejaba la pieza reproduciéndose sola 3.6s
+ * después de soltar, y uno de 20.000px, 6.5s.
+ *
+ * Se acota la deuda, no la velocidad: mientras lo que se debe entre en un
+ * segundo de reproducción, el tope es EXACTAMENTE el de antes y no cambia nada
+ * —scrollear normal cae siempre de este lado—. Pasado eso, el tope sube en
+ * proporción a lo que se debe, así que el atraso nunca supera ese segundo por
+ * mucho que se acumule. La pieza sigue reproduciendo en vez de saltar, que es
+ * lo que el tope existe para conseguir; lo que deja de hacer es reproducir sola
+ * durante seis segundos. */
+const PLAG=PMAX;
 function maxScroll(){return document.documentElement.scrollHeight-innerHeight;}
 function readScroll(){const m=maxScroll();target=m>0?clamp(sToP(clamp(scrollY/m))):0;}
 addEventListener('scroll',readScroll,{passive:true});
@@ -2700,7 +2759,7 @@ function drawFlowers(g,pe,orange,camS,camY,pick){
       ctx.restore();
       // El penacho al sol es una de las dos únicas fuentes de bloom.
       if(bloomOK&&e>0.4&&LIGHT.low<0.72)
-        glowBuf.push(W/2+x*camS,H*0.52+(y-camY)*camS,sc*camS*2.4,0.30*e*(1-LIGHT.low));
+        glowBuf.push(VX+x*camS,VY+(y-camY)*camS,sc*camS*2.4,0.30*e*(1-LIGHT.low));
     }
     /* Los pétalos no se desvanecen: se sueltan y caen. */
     const fa=(pe-(0.612+off))/0.058;
@@ -2737,7 +2796,7 @@ function drawFlowers(g,pe,orange,camS,camY,pick){
          del `continue` de abajo, el primer frame del viaje se quedaría sin
          origen y la naranja arrancaría desde el centro de la nada. */
       if(s.proj>=0) fruitScreen[s.proj]={
-        x:W/2+x*camS, y:H*0.52+(y+R*0.85-camY)*camS, r:R*camS};
+        x:VX+x*camS, y:VY+(y+R*0.85-camY)*camS, r:R*camS};
       /* El fruto elegido DESAPARECE de la copa apenas empieza a viajar. Antes
          seguía dibujándose acá mientras la fase interior pintaba otra naranja
          encima, así que durante toda la entrada había dos: la del árbol y la
@@ -2804,7 +2863,7 @@ function drawFlowers(g,pe,orange,camS,camY,pick){
         // El fruto maduro a contraluz: la otra fuente de bloom. No vale un
         // blur de pantalla completa por un fruto que ya se está yendo.
         if(bloomOK&&ob>0.55&&LIGHT.low>0.45&&interiorNow<0.3)
-          glowBuf.push(W/2+x*camS,H*0.52+(cy-camY)*camS,RR*camS*2.6,
+          glowBuf.push(VX+x*camS,VY+(cy-camY)*camS,RR*camS*2.6,
             0.34*ob*clamp((LIGHT.low-0.45)/0.35)*dim);
       }
       /* Cáliz y pedúnculo, a escala del fruto y encima de él. El cáliz genérico
@@ -4358,7 +4417,7 @@ function drawInterior(pe,t,dt){
     ctx.setTransform(DPR,0,0,DPR,0,0);
     ctx.translate(lerp(seedOut.x,W/2,r),
       // Un arco corto, no una recta: algo que se suelta describe una parábola.
-      lerp(seedOut.y,H*0.52,r)-Math.sin(r*Math.PI)*R*0.22);
+      lerp(seedOut.y,VY,r)-Math.sin(r*Math.PI)*R*0.22);
     ctx.rotate(seedOut.rot+dr*r);
     seedDraw(lerp(seedOut.s,SEED_IN.s*camS0,r),
       shadeD(SEED_BASE,0.82),'rgba(90,70,40,.45)',1);
@@ -4777,7 +4836,7 @@ function frame(now){
      No se aplica con prefers-reduced-motion: ahí seguir moviéndose después de
      soltar el scroll es exactamente lo que no se quiere. */
   if(!REDUCED&&!HOLD){
-    const cap=PMAX*dt;
+    const cap=PMAX*dt*Math.max(1,Math.abs(target-p)/PLAG);
     if(dp>cap) dp=cap; else if(dp<-cap) dp=-cap;
   }
   if(!HOLD){ p+=dp; wrap(); }
@@ -4803,7 +4862,7 @@ function frame(now){
   nightNow=night;
   const orange = pe<0.685 ? 0.03 : clamp(0.06+(Math.floor(cyc)-3)/3);   // el origen sigue al conteo de noches: con tres noches menos en los tramos tempranos, -3 deja el viraje en el MISMO tramo de scroll (0.685 a 0.76)
 
-  const camY=keyC(CAM_Y,pe),camS=keyC(CAM_S,pe);
+  const camY=keyC(CAM_Y,pe),camS=keyC(CAM_S,pe)*FITS;   // FITS: ver `reframe`
   const sky=skyColors(pe,night);
   /* Qué tan oscuro está REALMENTE el fondo detrás del texto.
      Esto lo decidía `STAGES[].dark`, un booleano escrito a mano por fase. El
@@ -4815,8 +4874,15 @@ function frame(now){
      medio del cielo cuando la cámara está sobre la tierra y el estrato de
      arriba cuando está por debajo. */
   {
-    const hhNow=H/2/camS;
-    const skyFrac=clamp((0-(camY-hhNow))/Math.max(1,2*hhNow));
+    /* Se mira la FRANJA DONDE ESTÁ EL TEXTO, no el cuadro entero. Mientras la
+       banda estaba centrada en vertical las dos cosas eran lo mismo; desde que
+       en vertical el texto se fue abajo —sin papel, apoyado directo sobre el
+       cielo o sobre la tierra— dejaron de serlo, y mirar el promedio del cuadro
+       daría tinta oscura sobre tierra en sombra justo cuando arriba hay cielo
+       claro. `TF0`/`TF1` son las mismas fracciones que el CSS usa para ubicar
+       la banda: la pregunta es qué hay detrás de ESE pedazo. */
+    const wTop=camY+(TF0*H-VY)/camS, wBot=camY+(TF1*H-VY)/camS;
+    const skyFrac=clamp((0-wTop)/Math.max(1e-3,wBot-wTop));
     const c=hx(mixL(SOIL[0].c,mixL(sky.a,sky.b,0.5),skyFrac));
     bgDark=(0.2126*c[0]+0.7152*c[1]+0.0722*c[2])/255 < 0.42;
   }
@@ -4867,7 +4933,7 @@ function frame(now){
       ctx.setTransform(DPR,0,0,DPR,0,0);
     }
     ctx.save();
-    ctx.translate(W/2,H*0.52);
+    ctx.translate(VX,VY);
     /* El mundo se va SALIENDO DE CUADRO, no bajándole el alpha, que es el mismo
        criterio con el que se va la cáscara y por el mismo motivo. El árbol se
        desvanecía de golpe —`1 − interior·0.96` sobre una rampa de 0.018 de pe—
@@ -4884,8 +4950,14 @@ function frame(now){
     const push=1+interior*interior*2.4;
     ctx.scale(push,push);
     ctx.scale(camS,camS);ctx.translate(0,-camY);
-    const hw=W/2/camS,hh=H/2/camS;
-    const view={x0:-hw,x1:hw,y0:camY-hh,y1:camY+hh,w:hw*2};
+    /* La caja visible en coordenadas de mundo. Se deriva del ANCLA y no del
+       centro de la pantalla, y eso dejo de ser lo mismo cuando `reframe` subio
+       el sujeto en vertical: con `camY±H/2/camS` la caja seguia centrada en la
+       camara, quedaba corta por abajo, y la tierra terminaba antes que la
+       pantalla — se veia una franja de cielo DEBAJO del suelo.
+       De paso queda exacta: el ancla siempre fue 0.52 y esto usaba 0.50. */
+    const hw=W/2/camS,hh=(H/2)/camS;
+    const view={x0:-hw,x1:hw,y0:camY+(0-VY)/camS,y1:camY+(H-VY)/camS,w:hw*2};
     /* Y el fundido tiene que llegar a CERO, y llegar ANTES que el corte. Estaba
        en `…*0.96`, o sea que se plantaba en 4% de opacidad, y el bloque entero
        deja de dibujarse en `interior >= 0.985`: el mundo fundía hasta un 4% y
@@ -4961,7 +5033,7 @@ function frame(now){
       const s=Math.min(W,H)*0.98;
       ctx.fillRect((W-s)/2,Math.max(0,H*0.47-s/2),s,s);
     }else{
-      const hz=Math.min(H,Math.max(0,H*0.52-camY*camS)+24);
+      const hz=Math.min(H,Math.max(0,VY-camY*camS)+24);
       if(hz>0) ctx.fillRect(0,0,W,hz);
     }
     ctx.globalAlpha=1;
@@ -4974,7 +5046,7 @@ function frame(now){
      tamaño de nube cambiaría al acercarse a mirar una raíz.
      Sólo por encima del horizonte, y no en la fase interior, donde no hay cielo. */
   if(haze&&interior<0.5){
-    const hz=Math.min(H,Math.max(0,H*0.52-camY*camS)+24);
+    const hz=Math.min(H,Math.max(0,VY-camY*camS)+24);
     if(hz>0){
       ctx.globalAlpha=0.055;ctx.fillStyle=haze;
       ctx.fillRect(0,0,W,hz);

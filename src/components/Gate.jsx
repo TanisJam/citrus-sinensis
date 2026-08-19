@@ -87,6 +87,13 @@ export function Gate({ onEnter, leaving, onGone }) {
  * que la pieza hace, y se va sola en cuanto el lector lo hace una vez. */
 export function ScrollHint({ scheme, onDone }) {
   const [going, setGoing] = useState(false)
+  /* El mismo piso que la puerta, y por la misma razon: si la transicion no
+     arranca, `transitionend` no llega y esto se queda montado. Con la puerta
+     eso dejaba la pieza tapada; aca es mas silencioso —una pista quieta en un
+     rincon— pero no es inofensivo: en un telefono la etiqueta de especimen se
+     apaga mientras la pista esta arriba, asi que una pista que no se va se
+     lleva la etiqueta con ella para todo el recorrido. */
+  useFallbackGone(going, onDone)
 
   useEffect(() => {
     const off = () => { setGoing(true); window.removeEventListener('scroll', off) }

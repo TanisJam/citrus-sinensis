@@ -108,6 +108,12 @@ export function Ciclo() {
   }, [])
 
   const scheme = hud.dark ? 'on-dark' : 'on-light'
+  /* La pista y la etiqueta se pisan en un telefono: la etiqueta mide 226px de
+     ancho en una pantalla de 390 y la pista esta centrada, asi que "SCROLL"
+     termina impreso adentro de la tarjeta. Se muestra una sola, y la que cede
+     es la etiqueta porque la pista se va sola a los pocos segundos. El corte
+     por ancho lo pone el CSS; aca solo se dice cuando la pista esta arriba. */
+  const hintUp = phase === 'in' && hinting
 
   return (
     <>
@@ -123,7 +129,7 @@ export function Ciclo() {
         <Gate onEnter={enter} leaving={phase === 'leaving'} onGone={() => setPhase('in')} />
       )}
       {phase === 'in' && <SoundToggle scheme={scheme} muted={muted} onToggle={toggleSound} />}
-      {phase === 'in' && hinting && (
+      {hintUp && (
         <ScrollHint scheme={scheme} onDone={() => setHinting(false)} />
       )}
 
@@ -133,10 +139,11 @@ export function Ciclo() {
         stage={hud.stage}
         note={hud.note}
         from={hud.from}
+        dim={hintUp}
       />
 
       <main>
-        <Bands onBandRef={registerBand} />
+        <Bands onBandRef={registerBand} scheme={scheme} />
         <TextIndex />
       </main>
 

@@ -10,9 +10,14 @@
  * y el papel de un especimen no cambia de color porque afuera se haga de noche.
  * El viraje quedo solo para lo que cae directo sobre el dibujo — marca, nav y
  * riel — que sin el desapareceria. */
-export function SpecimenLabel({ age, stage, note, from, labelRef }) {
+/* `dim` la enciende la pista de scroll, y solo tiene efecto en pantallas
+ * angostas. En un telefono la etiqueta y la pista comparten el borde de abajo y
+ * no hay ancho para las dos, asi que la etiqueta cede mientras la pista esta
+ * arriba. Quien decide es el contenedor, que es el unico que sabe si la pista
+ * sigue en pantalla; aca solo se refleja. */
+export function SpecimenLabel({ age, stage, note, from, labelRef, dim }) {
   return (
-    <figure className="label" ref={labelRef} aria-hidden="true">
+    <figure className={`label${dim ? ' dim' : ''}`} ref={labelRef} aria-hidden="true">
       <div className="age">{age}</div>
       <div className="stage">{stage}</div>
       <div className="note">{note}</div>
