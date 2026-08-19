@@ -9,17 +9,43 @@
  * un cartel que invita a hacer algo que no hace nada es peor que ningun
  * cartel. */
 
-export function Brand({ scheme }) {
-  return <div className={`brand ${scheme}`}>MNR</div>
+/* La marca es el unico enlace que la pieza tiene siempre a la vista, y desde
+   que la pieza ES el home, "ir al home" dejo de significar navegar: significa
+   volver a la semilla. El click lo atiende el motor, que salta a cero en un
+   cuadro en vez de rebobinar la reproduccion entera.
+ *
+ * Sigue siendo un `<a href="/">` y no un `<button>`, y eso importa por dos
+ * razones. Sin JS —o antes de que hidrate— el enlace igual lleva al home, solo
+ * que recargando. Y cmd+click, la rueda del mouse o "abrir en pestaña nueva"
+ * siguen haciendo lo que el usuario espera de un enlace: por eso el
+ * `preventDefault` se saltea cuando hay modificadores. Un boton disfrazado de
+ * enlace rompe las dos cosas. */
+export function Brand({ scheme, onHome }) {
+  const go = e => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    e.preventDefault()
+    onHome()
+  }
+  return (
+    <a className={`brand ${scheme}`} href="/" onClick={go} aria-label="Mauricio Romero — back to the start">
+      MNR
+    </a>
+  )
 }
 
+/* Tres salidas y nada mas: los dos lugares donde esta el trabajo, y el sitio
+   viejo para quien venia a buscar lo que habia antes.
+ *
+ * `/old` va con barra inicial. Es la unica de las tres que es del propio sitio,
+ * y una relativa sin barra cambia de destino segun desde donde se monte la
+ * pieza: `old` desde `/algo/` apunta a `/algo/old`, que no existe. Con barra
+ * apunta siempre a la raiz, se sirva desde donde se sirva. */
 export function Nav({ scheme }) {
   return (
     <nav className={`nav ${scheme}`}>
-      <a href="#">Blog</a>
-      <a href="#">Projects</a>
-      <a href="#">Resume</a>
-      <a href="#">ES</a>
+      <a href="https://github.com/TanisJam" rel="noopener noreferrer" target="_blank">GitHub</a>
+      <a href="https://www.linkedin.com/in/mauricionromero/" rel="noopener noreferrer" target="_blank">LinkedIn</a>
+      <a href="/old">Old site</a>
     </nav>
   )
 }

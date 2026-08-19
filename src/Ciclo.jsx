@@ -77,12 +77,19 @@ export function Ciclo() {
     setMuted(m => { audioRef.current.setMuted(!m); return !m })
   }, [])
 
+  /* La unica cosa que la pagina le PIDE al motor, en toda la pieza: volver al
+     principio. Todo lo demas va en el sentido contrario —el motor reporta y
+     React dibuja—, asi que el motor se guarda en una referencia y no en estado:
+     tenerlo no cambia nada de lo que se renderiza. */
+  const engineRef = useRef(null)
+  const goHome = useCallback(() => { engineRef.current?.home() }, [])
+
   useEffect(() => {
     /* Las referencias de los hijos ya estan puestas cuando corre este efecto:
        React confirma de abajo hacia arriba. Por eso el motor puede recibir los
        nodos de las bandas aca y no hace falta un segundo efecto ni un estado
        intermedio para esperarlos. */
-    const engine = createEngine({
+    const engine = engineRef.current = createEngine({
       canvas: canvasRef.current,
       bands: BANDS.map((b, i) => ({ from: b.from, to: b.to, el: bandEls.current[i] })),
       refs: { flash: flashRef, cycleDot: cycleDotRef, label: labelRef },
@@ -97,7 +104,7 @@ export function Ciclo() {
       onTick: (p, night, interior, sig) => audioRef.current.tick(p, night, interior, sig),
     })
     const audio = audioRef.current
-    return () => { engine.destroy(); audio.destroy() }
+    return () => { engine.destroy(); audio.destroy(); engineRef.current = null }
   }, [])
 
   const scheme = hud.dark ? 'on-dark' : 'on-light'
@@ -108,7 +115,7 @@ export function Ciclo() {
       <div id="grain" aria-hidden="true" />
       <div id="flash" ref={flashRef} aria-hidden="true" />
 
-      <Brand scheme={scheme} />
+      <Brand scheme={scheme} onHome={goHome} />
       <Nav scheme={scheme} />
       <CycleRail scheme={scheme} dotRef={cycleDotRef} />
 

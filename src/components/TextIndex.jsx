@@ -53,7 +53,7 @@ export function TextIndex() {
         <li><a href="https://www.mnr.ar/resume">Resume</a></li>
         <li><a href="https://github.com/TanisJam">GitHub</a></li>
         <li><a href="https://www.linkedin.com/in/mauricionromero/">LinkedIn</a></li>
-        <li><a href="https://www.mnr.ar/es" lang="es" hrefLang="es">Este sitio en español</a></li>
+        <li><a href="/old">The previous version of this site</a></li>
       </ul>
 
       <h2>Projects</h2>

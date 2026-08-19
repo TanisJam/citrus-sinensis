@@ -5015,6 +5015,25 @@ if(AT){ p=target=clamp(parseFloat(AT[1])); pPrev=p; }
 requestAnimationFrame(frame);
 
 return {
+  /* La vuelta a cero, que es lo que hace la marca. Es un SALTO, no una
+     reproducción hacia atrás, y eso hay que forzarlo: `p` persigue a `target`
+     con amortiguación y encima con tope de velocidad, así que dejar sólo el
+     `scrollTo` haría que la pieza se rebobinara sola durante varios segundos.
+     Volver al principio no es un movimiento de la pieza: es salir de ella.
+
+     `skipV` es el mismo reparo que ya toma el corte del bucle. Sin él, el cuadro
+     siguiente mide |p−pPrev| sobre un dt de milésimas y lee el tirón más grande
+     que la pieza puede tener — que es justamente la señal con la que se calman
+     las noches, así que el cielo se aplanaría entero por un click.
+
+     Lo que NO se toca es la vuelta: `chosenFruit` y `chosenGajo` siguen donde
+     estaban. Volver al principio devuelve la semilla, no el catálogo — cada
+     vuelta muestra otro proyecto y eso es el diseño de la pieza, no un contador
+     que haya que rebobinar. */
+  home(){
+    window.scrollTo(0,0);
+    target=0;p=0;pPrev=0;skipV=true;
+  },
   /* Diagnóstico. La pieza dejó de ser función de `pe` y sólo de `pe`: cuál
      proyecto se muestra depende de CUÁNTAS VUELTAS lleva, y eso es deliberado
      —es lo que reemplazó a elegir la fruta con el mouse—. Un invariante que se
