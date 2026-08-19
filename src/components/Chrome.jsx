@@ -50,7 +50,7 @@ export function Nav({ scheme }) {
     <nav className={`nav ${scheme}`}>
       <a href="https://github.com/TanisJam" rel="noopener noreferrer" target="_blank">GitHub</a>
       <a href="https://www.linkedin.com/in/mauricionromero/" rel="noopener noreferrer" target="_blank">LinkedIn</a>
-      <a href="/home">Old site</a>
+      <a href="/home">Full site</a>
     </nav>
   )
 }
