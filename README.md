@@ -38,6 +38,36 @@ Lo que sí ganó la migración:
   pantalla.
 - El HUD dejó de ser once `getElementById` y pasó a ser props.
 
+## El contenido
+
+La pieza es el portfolio, no una demo con texto de relleno. Los seis frutos con
+nombre de la copa son los seis proyectos de
+[mnr.ar/projects](https://www.mnr.ar/projects), y salen de `PROJECTS` en
+`src/engine/engine.js` — nombre, stack, gajos y URL del repo, todo del mismo
+sitio. Agregar o sacar un proyecto es editar ese array y nada más: cuántos
+frutos cuelga el árbol se deriva de `PROJECTS.length`.
+
+El trabajo diario —Endeavor, en Aerolab— **no** está entre los frutos a
+propósito. No es algo que se corta y se abre; es el árbol que se sigue cuidando.
+Vive en la banda "Currently".
+
+Dos cosas que hay que saber antes de tocar `src/content/bands.jsx`:
+
+- **Las bandas de la izquierda tienen techo de altura.** Comparten columna con
+  la etiqueta de especimen, que está fija abajo a la izquierda. Una cartela
+  izquierda de más de ~390 px se le mete abajo y la etiqueta le tapa las últimas
+  líneas, sin romper nada. Si el texto crece, se recorta o se manda a una banda
+  `r`.
+- **Ninguna banda pasa de 0.80.** De ahí en adelante la cámara se abre, el árbol
+  se planta en el medio del cuadro y el interior de la fruta dibuja su propio
+  texto sobre el canvas. Una cartela ahí tapa justo lo que el clímax existe para
+  mostrar.
+
+`src/components/TextIndex.jsx` es la versión leíble de todo esto: la pieza es un
+canvas (`aria-hidden`) más cartelas que se apagan con `visibility:hidden`, así
+que sin ese bloque un lector de pantalla encuentra sólo la banda encendida y un
+buscador no encuentra nada.
+
 ## El contrato del motor
 
 ```js

@@ -5,7 +5,7 @@ import { BANDS } from './content/bands.jsx'
 import { Bands } from './components/Bands.jsx'
 import { SpecimenLabel } from './components/SpecimenLabel.jsx'
 import { Brand, Nav, CycleRail } from './components/Chrome.jsx'
-import { ProjectsIndex } from './components/ProjectsIndex.jsx'
+import { TextIndex } from './components/TextIndex.jsx'
 import { Gate, ScrollHint, SoundToggle } from './components/Gate.jsx'
 
 /* El primer pintado tiene que salir ya con la etiqueta puesta. Un estado
@@ -130,7 +130,7 @@ export function Ciclo() {
 
       <main>
         <Bands onBandRef={registerBand} />
-        <ProjectsIndex />
+        <TextIndex />
       </main>
 
       {/* El recorrido. No es decoracion: es el unico insumo del que sale `p`, y

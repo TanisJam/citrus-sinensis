@@ -42,30 +42,115 @@ export const IDEAS=[
   'Fail loudly, early','Write it down','Small reversible steps',
   'Boring is a feature','Delete more than you add'
 ];
+/* Los seis frutos con nombre son los seis proyectos publicados en
+   mnr.ar/projects, en ese mismo orden. El trabajo diario —Endeavor, en
+   Aerolab— no esta aca a proposito: no es un fruto que se corta y se abre, es
+   el arbol que se sigue cuidando. Vive en la banda "Currently", donde
+   corresponde.
+
+   `hue` alterna profundo/claro a lo largo del array porque los frutos se
+   cuelgan de la copa ordenados por x: dos naranjas contiguas del mismo tono se
+   leen como una sola mancha.
+
+   `url` es lo que hace que la lista accesible sea navegable de verdad. Sale de
+   aca, del mismo catalogo que dibuja el canvas, por la misma razon que el
+   nombre: dos listas separadas divergen en silencio.
+
+   `about` es la glosa del gajo: lo que la lamina dice cuando el puntero se
+   apoya sobre ese carpelo, y lo que la version accesible lee al lado del
+   nombre. Una sola frase, sacada del README del repo y no inventada. El largo
+   NO es libre: se dibuja envuelta a 520 px en mono de 12px, o sea unos 62
+   caracteres por renglon, y el pie de la lamina tiene lugar para tres antes de
+   chocar con las ideas. Por arriba de ~180 caracteres, la glosa se come el
+   dibujo que esta glosando. */
 export const PROJECTS=[
-  {name:'Endeavor Platform', meta:'Aerolab · 2025', hue:'#F08C1C',
+  {name:'The Orange Mate', meta:'Next.js · Supabase', hue:'#E8791B',
+   url:'https://github.com/TanisJam/the-orange-mate',
    gajos:[
-     {name:'Global directory', seeds:[0,2]},
-     {name:'Permissions',      seeds:[1,3]},
-     {name:'Search',           seeds:[2,6]},
-     {name:'Reporting',        seeds:[0,4]},
-     {name:'Audit trail',      seeds:[4,3]}
+     {name:'Trip matching',   seeds:[1,5],
+      about:'Post a plan — a stay, a ride, a whole trip — with dates and budget, and let other solo travellers join it.'},
+     {name:'Cost splitting',  seeds:[0,3],
+      about:'Accommodation and transport split between whoever showed up, so travelling alone stops costing double.'},
+     {name:'Profiles',        seeds:[1,4],
+      about:'A public profile per traveller: bio, interests, and reviews written by the people they actually travelled with.'},
+     {name:'Companion feed',  seeds:[6,5],
+      about:'Discovery filtered by type, destination, dates and budget, with friend requests and one-to-one chat on top.'},
+     {name:'End-to-end tests',seeds:[3,4],
+      about:'Playwright smoke tests over the paths that matter: sign up, publish a plan, join one, talk to someone.'}
    ]},
-  {name:'Frontend Standards', meta:'Systems · 2025', hue:'#EFA23B',
+  {name:'Dungeon Hub', meta:'Monorepo · Fastify', hue:'#F2A93C',
+   url:'https://github.com/TanisJam/dungeon-hub',
    gajos:[
-     {name:'Component library',seeds:[2,7]},
-     {name:'Review checklist', seeds:[4,3]},
-     {name:'Estimation ritual',seeds:[5,4]},
-     {name:'Onboarding path',  seeds:[1,6]},
-     {name:'Design tokens',    seeds:[0,1]}
+     {name:'Character sheets',seeds:[0,2],
+      about:'Build and run 5e characters from a phone, with the rules doing the arithmetic instead of the player.'},
+     {name:'Rules compendium',seeds:[2,4],
+      about:'Races, classes, spells, items and monsters imported from 5etools — but the 2014 PHB is what wins.'},
+     {name:'Campaign map',    seeds:[6,5],
+      about:'A shared West Marches map with waypoints, played asynchronously by several DMs at the same time.'},
+     {name:'World knowledge', seeds:[4,0],
+      about:'Lore, factions, NPCs and past sessions in one place, which is what keeps a persistent world consistent.'},
+     {name:'Discord bridge',  seeds:[1,3],
+      about:'A slash-command bot that pulls sheets and world data into the Discord where the table already is.'}
    ]},
-  {name:'Salesforce Integrations', meta:'Backend · 2024', hue:'#E8791B',
+  {name:'peel', meta:'CLI · npm', hue:'#E2661A',
+   url:'https://github.com/TanisJam/peel',
    gajos:[
-     {name:'Sync layer',    seeds:[0,5]},
-     {name:'Field mapping', seeds:[2,1]},
-     {name:'Error recovery',seeds:[3,5]},
-     {name:'Retry policy',  seeds:[6,5]},
-     {name:'Audit trail',   seeds:[4,7]}
+     /* "Branch worktrees" y no "Worktree per branch": los rotulos del interior
+        se dibujan en mono de 12px a los costados del abanico de gajos, y a
+        partir de ~17 caracteres el de mas afuera empieza a salirse del cuadro en
+        pantallas angostas. El limite es de dibujo, no de nomenclatura. */
+     {name:'Branch worktrees', seeds:[5,1],
+      about:'Any branch spun up in its own git worktree, with its dev server running, and gone again on Ctrl+C.'},
+     {name:'Free port',          seeds:[1,3],
+      about:'Walks the next twenty ports instead of failing — and if you pinned one, it names the process holding it.'},
+     {name:'Env carry-over',     seeds:[0,6],
+      about:'Copies every .env into the new worktree, so the branch boots configured instead of half-broken.'},
+     {name:'Isolated deps',      seeds:[6,5],
+      about:'Its own node_modules per worktree: one branch’s install can never reach into another branch’s.'},
+     {name:'Clean teardown',     seeds:[7,5],
+      about:'The worktree is removed on exit, and clean --stale sweeps whatever an abrupt exit left behind.'}
+   ]},
+  {name:'Orange Grove', meta:'SDD harness · CLI', hue:'#F5B84A',
+   url:'https://github.com/TanisJam/orange-grove',
+   gajos:[
+     {name:'Spec before code',seeds:[4,1],
+      about:'Don’t harvest before you plant: eight phases, and no implementation until the specs are approved.'},
+     {name:'Change folders',  seeds:[0,2],
+      about:'Delta specs with ADD, MODIFY and REMOVE — changing a feature stops meaning rewriting its spec.'},
+     {name:'Task ledger',     seeds:[4,5],
+      about:'Requirement to task to evidence, and a dependency-free validator that refuses to let the chain break.'},
+     {name:'Archive & merge', seeds:[7,0],
+      about:'Harvest folds the delta back into the main specs and closes the cycle, so the next one starts clean.'},
+     {name:'Tool-agnostic',   seeds:[6,2],
+      about:'The same harness in Claude Code, opencode, Cursor or Codex, through one adapter per tool.'}
+   ]},
+  {name:'Just a Drop', meta:'Next.js · R2', hue:'#EE8A1C',
+   url:'https://github.com/TanisJam/just-a-drop',
+   gajos:[
+     {name:'Browser recorder',seeds:[6,1],
+      about:'MediaRecorder in the browser — tap, speak, tap. No app to install, nothing to sign up for.'},
+     {name:'Short link',      seeds:[2,5],
+      about:'Every recording becomes a short link, small enough to paste into any conversation.'},
+     {name:'Play-once lock',  seeds:[1,3],
+      about:'Pressing play marks the drop consumed and schedules its deletion. One listen, and it is gone.'},
+     {name:'Object storage',  seeds:[6,0],
+      about:'The audio is sliced into chunks and streamed to Cloudflare R2, never as one fat upload.'},
+     {name:'Expiry sweep',    seeds:[7,3],
+      about:'An hourly cron walks the index and scrubs consumed and expired drops from R2 and Redis both.'}
+   ]},
+  {name:'Hecho Hex', meta:'Mapbox · H3', hue:'#D9591C',
+   url:'https://github.com/TanisJam/hecho-hex',
+   gajos:[
+     {name:'Hex tiling',      seeds:[2,6],
+      about:'H3 tessellates the map at resolution seven to nine by zoom, and each cell is its own board.'},
+     {name:'Pinned to place', seeds:[0,1],
+      about:'A message belongs to the hexagon you were standing in, and the server is what enforces that.'},
+     {name:'Anonymous drops', seeds:[1,7],
+      about:'Identity is a random id in localStorage. No account, no email, and every message dies in 48 hours.'},
+     {name:'Map rendering',   seeds:[6,5],
+      about:'Mapbox under draggable bubbles that d3-force keeps floating over the cell they belong to.'},
+     {name:'Feed per cell',   seeds:[0,5],
+      about:'A word cloud of what a hex is talking about, and emoji reactions that land in real time.'}
    ]}
 ];
 
@@ -462,14 +547,29 @@ function buildTree(seed){
   const picked=[];
   for(let k=0;k<term.length&&picked.length<want;k+=stepI) picked.push(term[k]);
 
-  // Las tres que llevan proyecto se eligen por su x, bien separadas y en lo alto
-  // de la copa: son las que el clímax puede abrir, así que tienen que leerse
-  // como tres cosas distintas y no como tres frutos apilados.
+  /* Las que llevan proyecto se eligen por su x, bien separadas y en lo alto de
+     la copa: son las que el clímax puede abrir, así que tienen que leerse como
+     cosas distintas y no como frutos apilados.
+
+     Cuántas son sale de `PROJECTS.length` y NO de un literal. Estaban fijas en
+     tres —`[pool[0], pool[medio], pool[último]]`— y esa constante escondida es
+     la que convierte agregar un proyecto al catálogo en un bug silencioso: el
+     cuarto existía para el índice accesible y para el clímax, pero nunca
+     colgaba del árbol. El catálogo manda; el reparto se deriva. */
   let hi=[...picked];
   let minY=0; for(const i of hi) if(fy[i]<minY) minY=fy[i];
   const canopy=hi.filter(i=>fy[i]<minY*0.30);
   const pool=(canopy.length>=8?canopy:hi).slice().sort((a,b)=>fx[a]-fx[b]);
-  const keepNodes=[pool[0], pool[pool.length>>1], pool[pool.length-1]];
+  const NAMED=Math.min(PROJECTS.length,pool.length);
+  const keepNodes=[];
+  for(let k=0;k<NAMED;k++){
+    /* Repartidos de punta a punta del pool. El redondeo puede repetir un nodo
+       cuando el pool viene justo, y dos proyectos en el mismo fruto serían un
+       proyecto perdido: se corre al siguiente libre. */
+    let idx=NAMED>1?Math.round(k/(NAMED-1)*(pool.length-1)):0;
+    while(idx<pool.length&&keepNodes.indexOf(pool[idx])>=0) idx++;
+    if(idx<pool.length) keepNodes.push(pool[idx]);
+  }
 
   /* Y los que no cuentan nada.
      El árbol daba TRES naranjas en toda la copa, y la nota de campo lo defendía
@@ -503,7 +603,12 @@ function buildTree(seed){
       /* Los sin nombre viran repartidos por todo el rango en vez de en tres
          escalones: si viran juntos, seis naranjas cambiando de color en el
          mismo cuadro delatan que es una animación. */
-      turn:(ki>=0?ki*0.09:(Math.sin(ph0*3.1)*0.5+0.5)*0.26)
+      /* Los que llevan nombre viran escalonados, pero el escalón se calcula
+         sobre el TOTAL: con un paso fijo de 0.09 el sexto proyecto arrancaría a
+         virar en 0.45 del avance de color y se quedaría verde hasta después de
+         que la fruta se corta. El rango 0–0.18 es el que ya estaba validado; lo
+         que cambia es en cuántos escalones se reparte. */
+      turn:(ki>=0?(NAMED>1?ki/(NAMED-1)*0.18:0):(Math.sin(ph0*3.1)*0.5+0.5)*0.26)
            +(Math.sin(ph0*5.7)*0.5+0.5)*0.03,
       // Tamaño: en un árbol cargado no hay dos frutos del mismo calibre.
       cal:ki>=0?1:0.74+0.30*(Math.sin(ph0*7.7)*0.5+0.5),
@@ -1651,11 +1756,45 @@ function seedDraw(s,fill,line,draw){
   }
 }
 
+/* La semilla no se apaga: se GASTA.
+ *
+ * Estaba dibujada a opacidad plena hasta `pe = 0.29` y ahí la llamada de arriba
+ * dejaba de hacerse. O sea que desaparecía ENTERA de un cuadro al otro, con la
+ * raíz ya larga y el tallito afuera — justo en el tramo donde el lector la está
+ * mirando. La regla que este archivo ya se escribió para el fundido del mundo
+ * vale igual acá: un fundido que no termina en cero no es un fundido, y un
+ * corte sin fundido no es nada.
+ *
+ * `spent` es cuánto se consumió la reserva. Empieza en 0.222 —con la radícula
+ * ya fuera y las hojitas alimentándose— y cierra en 0.288, un pelo antes del
+ * 0.29 que corta la llamada, así que para cuando el corte llega no queda nada
+ * que cortar. Termina justo cuando arranca `Flush cycles`, que es exactamente
+ * lo que dice la nota de campo de `Emergence`: los cotiledones alimentan al
+ * plantín hasta que las primeras hojas verdaderas se pagan solas.
+ *
+ * `smooth` y no lineal: una rampa recta arranca y frena de golpe, y sobre un
+ * objeto opaco eso se lee como dos cortes chiquitos en vez de uno grande.
+ */
 function drawSeed(pe){
+  const spent=smooth(clamp((pe-0.222)/0.066));
+  if(spent>=1) return;          // gastada: ni se dibuja
+  /* El alpha de entrada se respeta y no se pisa. Este bloque corre dentro del
+     dibujo del mundo, que tiene su propia opacidad durante la entrada de la
+     fruta; clavarlo en 1 —que es lo que hacía el cierre del bloque de abajo—
+     sacaba la semilla de ese fundido y la dejaba flotando sola. */
+  const a0=ctx.globalAlpha;
+  const fade=1-spent;
+  ctx.globalAlpha=a0*fade;
+
   const swell=key([[0.05,1],[0.10,1.22],[0.17,1.3]],pe);
   const open=clamp((pe-0.095)/0.045);
   ctx.save();ctx.translate(0,4);ctx.rotate(-0.2+open*0.1);
-  seedDraw(13*swell,
+  /* Y se encoge un poco mientras se vacía. Una testa que entregó toda su
+     reserva se arruga; sin esto, un fundido puro sobre una silueta sólida se
+     lee como un fantasma que se transparenta y no como una cáscara que se
+     terminó. Es poco a propósito —hasta 0.88— porque lo que cuenta la
+     desaparición es el alpha; esto sólo le saca el aire de truco. */
+  seedDraw(13*swell*(1-spent*0.12),
     shadeD(mixH(SEED_BASE,'#C9B689',clamp((pe-0.075)/0.09)),0.80),
     'rgba(90,70,40,.5)');
   if(open>0){                   // la testa se abre por la sutura
@@ -1669,14 +1808,20 @@ function drawSeed(pe){
     for(let i=0;i<3;i++){
       const a=Math.PI/2+(i-1)*0.62+0.12;
       const l=10+emb*(16-i*4)*(1-clamp((pe-0.17)/0.09)*0.35);
-      ctx.globalAlpha=0.85*(1-clamp((pe-0.19)/0.10)*0.75);
+      /* Los cotiledones ya se iban por su cuenta, pero se quedaban en el 21% y
+         de ahí saltaban a cero con el resto. Ahora ese retroceso propio se
+         MULTIPLICA por el fundido general en vez de competir con él, así que
+         llegan a cero de verdad y lo hacen antes que la testa — que es el
+         orden correcto: primero se consume la reserva, después queda la
+         cáscara vacía. */
+      ctx.globalAlpha=a0*fade*0.85*(1-clamp((pe-0.19)/0.10)*0.75);
       ctx.lineWidth=1.9;
       ctx.beginPath();ctx.moveTo(0,10);
       ctx.quadraticCurveTo(Math.cos(a)*l*0.6,10+Math.sin(a)*l*0.6,Math.cos(a)*l,10+Math.sin(a)*l);
       ctx.stroke();
     }
-    ctx.globalAlpha=1;
   }
+  ctx.globalAlpha=a0;
 }
 
 const rb=[[],[],[],[],[],[],[],[],[]], rbw=[[],[],[],[],[],[],[],[],[]];
@@ -2867,6 +3012,10 @@ for(let i=0;i<VES_N;i++){
    dibujar antes de que la fuente haya cargado: la primera pasada en fuente de
    sistema se ve como un salto. */
 let LABEL_HALO='rgba(242,237,226,.85)';   // se ajusta al fondo cada frame
+/* El halo del sangrado va del color de la TINTA y no del papel: es la mancha
+   que deja una pincelada antes de cerrarse, no un contorno de legibilidad.
+   Es lo contrario exacto de `LABEL_HALO`, y por eso son dos pasadas. */
+const INK_BLEED='rgba(32,24,14,.5)';
 let fontsReady=!(document.fonts&&document.fonts.ready);
 if(!fontsReady) document.fonts.ready.then(()=>{fontsReady=true;});
 const HAS_LS=(function(){try{return 'letterSpacing' in ctx;}catch(e){return false;}})();
@@ -2895,6 +3044,91 @@ function label(text,x,y,align,size,col,alpha,weight,track){
       ctx.fillText(text[i],cx0,y);
       cx0+=ctx.measureText(text[i]).width+adv;
     }
+  }
+  ctx.shadowBlur=0;
+  ctx.globalAlpha=1;
+}
+
+/* Corta una frase en renglones que entran en `maxW`, midiendo CON el tracking
+   que después se va a dibujar. Medir sin él no es una aproximación: a .02em de
+   12px son 0.24 px por carácter, que en un renglón de sesenta se acumulan en
+   quince — justo los que deciden si la última palabra entra o se cae sola al
+   renglón siguiente. Una viuda en una lámina de tres renglones se ve.
+   `measureText` da el ancho sin espaciado porque `label` deja `letterSpacing`
+   en cero cuando termina; el resto se suma acá, que es donde se sabe cuántos
+   caracteres hay. */
+function wrapMono(text,size,track,maxW){
+  ctx.font='500 '+size+'px "IBM Plex Mono",ui-monospace,Menlo,monospace';
+  const adv=size*track;
+  const wide=s=>ctx.measureText(s).width+adv*Math.max(0,s.length-1);
+  const out=[];
+  let line='';
+  for(const word of text.split(' ')){
+    const next=line?line+' '+word:word;
+    // Una palabra sola más ancha que la caja igual sale: cortarla por la mitad
+    // seria peor, y el catálogo ya limita el largo de la frase entera.
+    if(line&&wide(next)>maxW){ out.push(line); line=word; }
+    else line=next;
+  }
+  if(line) out.push(line);
+  return out;
+}
+
+/* Escribe renglones ya cortados, carácter por carácter, con `prog` de 0 a 1.
+   La cabeza de escritura avanza sobre el párrafo ENTERO y no sobre cada renglón
+   por separado: el salto de línea no reinicia nada, así que la frase se pone
+   como se escribe una frase y no como se llenan tres cajas.
+
+   `K` es cuántos caracteres están mojados a la vez. Con uno, esto es una
+   máquina de escribir —seco, mecánico, y encima ilegible mientras corre—. Con
+   diez hay una franja de tinta fresca que se corre por el renglón, que es lo
+   que se ve cuando alguien escribe de verdad.
+
+   El sangrado se dibuja aparte y sólo mientras dura: `s*(1-s)*4` es una campana
+   que vale 0 al empezar y al terminar, y 1 en el medio. O sea que el segundo
+   `fillText` de cada letra existe durante una décima y después desaparece del
+   todo — de los ciento y pico de caracteres, en cualquier cuadro hay diez
+   pagando ese costo, no todos. */
+function inkWrite(lines,x,y,size,col,alpha,prog,lineH){
+  if(!fontsReady||alpha<=0.004) return;
+  ctx.font='500 '+size+'px "IBM Plex Mono",ui-monospace,Menlo,monospace';
+  if(HAS_LS) ctx.letterSpacing='0px';
+  /* En mono todos los avances son el mismo, así que el renglón se compone con
+     una sola medición en vez de una por letra. Es la única razón por la que
+     esto puede dibujarse carácter por carácter sin que cueste. */
+  const cw=ctx.measureText('M').width;
+  const adv=cw+size*0.02;
+  const K=10;
+  let total=0;
+  for(let l=0;l<lines.length;l++) total+=lines[l].length;
+  const head=prog*(total+K);
+  ctx.textAlign='left';
+  ctx.textBaseline='middle';
+  ctx.fillStyle=col;
+  let n=0, ly=y;
+  for(let l=0;l<lines.length;l++){
+    const line=lines[l];
+    let lx=x-(adv*(line.length-1)+cw)/2;
+    for(let i=0;i<line.length;i++,n++,lx+=adv){
+      if(line[i]===' ') continue;
+      const u=clamp((head-n)/K);
+      if(u<=0.004) continue;
+      const s=smooth(u);
+      // La letra se posa: entra un pelo más abajo y sube a su renglón.
+      const cy0=ly+(1-s)*1.7;
+      const wet=s*(1-s)*4;
+      if(wet>0.02){
+        ctx.shadowColor=INK_BLEED;
+        ctx.shadowBlur=size*(0.85*(1-s)+0.2);
+        ctx.globalAlpha=alpha*wet*0.5;
+        ctx.fillText(line[i],lx,cy0);
+      }
+      ctx.shadowColor=LABEL_HALO;
+      ctx.shadowBlur=6;
+      ctx.globalAlpha=alpha*s;
+      ctx.fillText(line[i],lx,cy0);
+    }
+    ly+=lineH;
   }
   ctx.shadowBlur=0;
   ctx.globalAlpha=1;
@@ -3312,9 +3546,128 @@ const IN_OPEN =[0.936,0.008];   // se abre el elegido
 const IN_REL  =[0.942,0.008];   // y suelta la semilla, que abre la vuelta siguiente
 const ramp=(pe,r)=>clamp((pe-r[0])/r[1]);
 
-function drawInterior(pe,t){
+/* ============ el puntero sobre los gajos ============
+   Toda la pieza se maneja con una sola entrada, el scroll, y esto es lo único
+   que agrega otra. Se la gana el interior: es el único cuadro donde el dibujo
+   deja de ser paisaje y pasa a ser lámina rotulada, y una lámina rotulada
+   invita a preguntarle a una pieza qué es.
+
+   El sondeo NO pasa por el evento. El evento guarda dos números y nada más; el
+   cuadro es el que decide qué gajo está señalado, con la geometría que acaba de
+   dibujar. Al revés —resolviendo el gajo dentro del `pointermove`— habría que
+   reconstruir afuera del bucle seis transformaciones que el contexto ya tiene
+   compuestas, y cada vez que el dibujo cambiara un número, el área sensible se
+   quedaría apuntando a donde el gajo ya no está. Es exactamente lo que ya le
+   pasó a las guías de los rótulos.
+
+   El precio es un cuadro de retardo: se señala con las cápsulas del cuadro
+   anterior. A 60 Hz son 16 ms sobre un dibujo que además está quieto mientras
+   uno lo mira, así que no hay nada que ver. */
+let ptrX=-1, ptrY=-1;
+/* Las cápsulas del eje de cada carpelo, en px CSS, reescritas cada cuadro.
+   Una cápsula y no una caja: cinco gajos en abanico tienen cajas que se pisan
+   entre sí, y ahí "cuál está señalado" pasa a depender del orden del array en
+   vez de dónde está el puntero. Con la distancia al eje, el que gana es el que
+   uno está mirando. */
+const GAJO_HIT=[];
+let hoverGajo=-1;
+
+/* `hoverGajo` es un booleano y el dibujo NO lo usa: usa esta rampa. Va de 0 a 1
+   en poco menos de dos décimas y vuelve en casi medio segundo, y las dos
+   constantes son distintas a propósito — llega atenta y se retira despacio, que
+   es como se apaga todo lo demás en esta pieza. Un corte seco acá sería lo único
+   de la lámina que pasa en un solo cuadro. */
+const hoverAmt=new Float32Array(GAJOS_TOTAL);
+const HOVER_IN=0.18, HOVER_OUT=0.42;
+
+/* ---------- la glosa se ESCRIBE ----------
+   Una frase que aparece entera es un cartel. Ésta se pone letra por letra, de
+   izquierda a derecha, y cada letra hace lo que hace la tinta sobre papel sin
+   encolar: primero SANGRA —una mancha ancha y floja, que es el `nijimi` del
+   sumi-e— y recién después el trazo se cierra sobre sí mismo y queda nítido. Por
+   eso cada carácter mojado se dibuja dos veces: el sangrado con halo de tinta y
+   desenfoque grande, que crece y se va; y el trazo asentado, con el mismo halo
+   de papel que llevan todos los rótulos de la lámina.
+
+   Y entre un gajo y otro el pincel se LEVANTA antes de volver a apoyar. El texto
+   viejo no se transforma en el nuevo: se retira, hay un hueco de milésimas, y
+   entonces empieza la escritura. Ese hueco es el que hace que se lea como dos
+   frases y no como una que muta. */
+let glosaGajo=-1;              // de qué gajo es el texto que está en el pie
+let glosaAmt=0;                // presencia: sube al apoyar, baja al levantar
+let glosaInk=0;                // avance de la escritura, primera letra a última
+let glosaLines=null, glosaW=0; // renglones ya cortados, y a qué ancho se cortaron
+const GLOSA_UP=0.10, GLOSA_DOWN=0.15, GLOSA_WRITE=0.62;
+
+addEventListener('pointermove',e=>{ ptrX=e.clientX; ptrY=e.clientY; },{passive:true});
+/* En un teléfono no hay hover, y sin esto la glosa no existiría en la mitad de
+   las pantallas. El toque la enciende; el siguiente scroll la apaga sola,
+   porque la fase se va. */
+addEventListener('pointerdown',e=>{ ptrX=e.clientX; ptrY=e.clientY; },{passive:true});
+// El puntero que se va de la ventana no deja su última posición apoyada sobre
+// un gajo: `relatedTarget` nulo es justamente eso, salir del documento.
+addEventListener('pointerout',e=>{ if(!e.relatedTarget){ ptrX=ptrY=-1; } },{passive:true});
+
+function pickGajo(){
+  if(ptrX<0) return -1;
+  let best=-1, bd=Infinity;
+  for(let n=0;n<GAJO_HIT.length;n++){
+    const g=GAJO_HIT[n];
+    const vx=g.bx-g.ax, vy=g.by-g.ay;
+    const len2=vx*vx+vy*vy;
+    if(len2<1) continue;
+    // Proyección sobre el eje, recortada al segmento: el área sensible termina
+    // donde termina el carpelo, no en su prolongación al infinito.
+    const u=clamp(((ptrX-g.ax)*vx+(ptrY-g.ay)*vy)/len2);
+    const d=Math.hypot(ptrX-(g.ax+vx*u), ptrY-(g.ay+vy*u));
+    if(d<=g.r&&d<bd){ bd=d; best=g.i; }
+  }
+  return best;
+}
+
+function drawInterior(pe,t,dt){
   const enter  = ramp(pe,IN_ENTER);
-  if(enter<=0) return 0;
+  /* Fuera de la fase no hay gajos que señalar. Sin este reset, la glosa del
+     último gajo señalado sobreviviría a la vuelta entera del ciclo y volvería a
+     aparecer sola cuando la lámina abriera de nuevo. Se reinicia TODO el estado
+     del hover, incluidas las rampas: volver con una a medio camino haría que un
+     gajo empezara iluminado sin que nadie lo esté señalando. */
+  if(enter<=0){
+    GAJO_HIT.length=0; hoverGajo=-1;
+    if(glosaGajo!==-1||glosaAmt>0){
+      glosaGajo=-1; glosaAmt=0; glosaInk=0; glosaLines=null;
+      hoverAmt.fill(0);
+    }
+    return 0;
+  }
+  hoverGajo=pickGajo();
+  GAJO_HIT.length=0;
+
+  /* Las rampas del hover. `1-Math.pow(0.02,dt/T)` es el mismo seguimiento
+     amortiguado con el que `p` persigue al scroll: a los T segundos llegó al
+     98%, sea cual sea la cadencia de cuadros. Con `prefers-reduced-motion` no
+     hay rampa — quien pidió que las cosas no se muevan no pidió que se muevan
+     más despacio. */
+  const kIn =REDUCED?1:1-Math.pow(0.02,dt/HOVER_IN);
+  const kOut=REDUCED?1:1-Math.pow(0.02,dt/HOVER_OUT);
+  for(let i=0;i<GAJOS_TOTAL;i++){
+    const tgt=i===hoverGajo?1:0;
+    hoverAmt[i]+=(tgt-hoverAmt[i])*(tgt>hoverAmt[i]?kIn:kOut);
+  }
+
+  /* El pincel. Mientras el gajo señalado sea el mismo, la tinta sube y la
+     escritura avanza; cuando cambia —o cuando el puntero se va— la presencia
+     baja primero, y sólo cuando llegó a cero se adopta el gajo nuevo y la
+     escritura arranca de la primera letra. */
+  if(hoverGajo!==glosaGajo){
+    glosaAmt-=REDUCED?1:dt/GLOSA_DOWN;
+    if(glosaAmt<=0){
+      glosaAmt=0; glosaGajo=hoverGajo; glosaInk=0; glosaLines=null;
+    }
+  }else if(glosaGajo>=0){
+    glosaAmt=Math.min(1,glosaAmt+(REDUCED?1:dt/GLOSA_UP));
+    glosaInk=Math.min(1,glosaInk+(REDUCED?1:dt/GLOSA_WRITE));
+  }
   const peel   = ramp(pe,IN_PEEL);
   /* Entre que la cáscara terminó de salir y que los gajos se abren en hilera
      hay un momento que antes no existía: la fruta pelada, entera, envuelta en
@@ -3543,6 +3896,22 @@ function drawInterior(pe,t){
       alpha=vis*(1-clamp(fan*2.4));
     }
     const sel=named&&i===chosenGajo;
+    /* SEÑALADO NO ES ELEGIDO, y el dibujo tiene que decirlo con el color.
+       El elegido es el que se va a abrir y a crecer, y tiene su propia pulpa
+       —más saturada, más profunda— porque es el que la pieza está por contar.
+       El señalado no anuncia nada: sólo se ACLARA, como si le diera un poco más
+       de luz. Es la diferencia entre "mirá esto" y "estás mirando esto".
+       Que compartieran el mismo color era prometer una apertura que el hover no
+       hace, y la promesa se notaba justo cuando el gajo señalado no era el que
+       después se abría.
+
+       Y no cambia `chosenGajo`: de ahí salen las ideas del pie y la semilla que
+       se lleva la vuelta siguiente. El puntero pregunta, no decide. */
+    const hov=named?hoverAmt[i]:0;
+    const pulpBase=sel?cPulpSel:cPulpHot;
+    // Hacia crema, no hacia blanco: el blanco lava la pulpa y la deja de papel.
+    const pulpLit=hov>0.004?mixH(pulpBase,'#FFE9C0',0.40*hov):pulpBase;
+    const pulpInner=hov>0.004?mixH(cPulp,'#FFE9C0',0.40*hov):cPulp;
     if(named&&open>0){
       if(sel){
         // El elegido vuelve al centro de la lámina y crece.
@@ -3555,6 +3924,26 @@ function drawInterior(pe,t){
     ctx.save();
     ctx.translate(px,py);ctx.rotate(ang);ctx.scale(sc,sc);
     ctx.globalAlpha=alpha;
+    /* El eje de este carpelo, en coordenadas de pantalla. Se lee de la matriz y
+       no se recalcula, por la misma razón que la pose de la semilla: arriba de
+       esta línea hay un giro de escena, una deriva, el achatado del rosetón, la
+       rotación del carpelo y su escala. Rehacer esa cuenta afuera sería
+       escribir dos veces lo que el contexto ya tiene compuesto — con la
+       diferencia de que la copia se desincroniza en silencio el día que alguien
+       toque un número del dibujo, y un área sensible desincronizada es peor que
+       ninguna: responde donde no hay nada.
+       Sólo los gajos con nombre y ya separados: un rosetón empaquetado no tiene
+       piezas que señalar, tiene un disco. */
+    if(named&&fan>0.12&&alpha>0.25){
+      const M=ctx.getTransform();
+      const tip=carpelX(1,L,HALF,det);
+      GAJO_HIT.push({i,
+        ax:M.e/DPR, ay:M.f/DPR,
+        bx:(M.a*tip+M.e)/DPR, by:(M.b*tip+M.f)/DPR,
+        // El radio es la media anchura donde el carpelo es más ancho, medida
+        // con la escala del eje perpendicular — que es la que el achatado toca.
+        r:carpelW(0.72,L,HALF,det)*Math.hypot(M.c,M.d)/DPR});
+    }
     /* Traslucidez por transmisión: la luz atraviesa el gajo y sale por donde
        es más fino, o sea el borde. Por eso va un halo cálido afuera, un borde
        claro, y el centro más denso — al revés de una superficie opaca. */
@@ -3574,12 +3963,12 @@ function drawInterior(pe,t){
       ctx.restore();
     }
     if(det>0.15){ctx.shadowColor=cBleed;ctx.shadowBlur=RG*0.075*det;}
-    ctx.fillStyle=sel?cPulpSel:cPulpHot;
+    ctx.fillStyle=pulpLit;
     carpelPath(ctx,L,HALF,det);ctx.fill();
     ctx.shadowBlur=0;
     ctx.save();
     ctx.translate(L*0.5,0);ctx.scale(0.87,0.68);ctx.translate(-L*0.5,0);
-    ctx.fillStyle=cPulp;carpelPath(ctx,L,HALF,det);ctx.fill();
+    ctx.fillStyle=pulpInner;carpelPath(ctx,L,HALF,det);ctx.fill();
     ctx.restore();
 
     // Vesículas: paramétricas sobre el propio carpelo, así nunca se escapan.
@@ -3981,8 +4370,15 @@ function drawInterior(pe,t){
   if(fan>0.12){
     for(let i=0;i<shown;i++){
       const sel=i===chosenGajo;
+      /* Cuánto está destacado este rótulo, de 0 a 1: el elegido por el ciclo va
+         siempre en 1; el señalado por el puntero sube y baja con su rampa. El
+         rótulo subiendo a opacidad plena es lo que ata la glosa del pie al gajo
+         que la está pidiendo — sin eso son dos cosas sueltas en la lámina— y
+         subiendo GRADUALMENTE es lo que hace que se lea como una sola cosa que
+         se enciende y no como dos que parpadean juntas. */
+      const em=sel?1:hoverAmt[i];
       // Escalonadas: aparecen una detrás de otra, no todas de golpe.
-      const a=vis*clamp((fan-0.12-i*0.055)/0.34)*(sel?1:1-open*0.85);
+      const a=vis*clamp((fan-0.12-i*0.055)/0.34)*lerp(1-open*0.85,1,em);
       if(a<=0.004) continue;
       /* La guía nace en la punta del carpelo, así que TIENE que rehacer la
          misma cuenta que hizo el carpelo — el mismo reparto, el mismo retardo
@@ -4022,7 +4418,7 @@ function drawInterior(pe,t){
         ctx.stroke();ctx.fillStyle=ink;
         ctx.beginPath();ctx.arc(ax,ay,1.6,0,6.283);ctx.fill();
         ctx.globalAlpha=1;
-        label(proj.gajos[i].name.toUpperCase(),lx+el+(side>0?6:-6),ly,align,12,ink,a*(sel?1:0.7),600);
+        label(proj.gajos[i].name.toUpperCase(),lx+el+(side>0?6:-6),ly,align,12,ink,a*lerp(0.7,1,em),600);
         continue;
       }
       ctx.moveTo(tipX,tipY-4);
@@ -4033,7 +4429,34 @@ function drawInterior(pe,t){
       ctx.beginPath();ctx.arc(tipX,tipY-4,1.6,0,6.283);ctx.fill();
       ctx.globalAlpha=1;
       const ox=el?el+(align==='left'?6:-6):0;
-      label(proj.gajos[i].name.toUpperCase(),lx+ox,ly,align,12,ink,a*(sel?1:0.7),600);
+      label(proj.gajos[i].name.toUpperCase(),lx+ox,ly,align,12,ink,a*lerp(0.7,1,em),600);
+    }
+  }
+  /* La glosa del gajo señalado. Va al PIE de la lámina y no colgada de su
+     rótulo, y eso no es comodidad: cinco rótulos ya repartidos entre los dos
+     costados y el centro no dejan lugar para tres renglones más sin pisar al
+     vecino, y una glosa que aparece a veces a la izquierda, a veces arriba y a
+     veces del otro lado obliga a buscarla cada vez que uno mueve el puntero.
+     En el pie cambia el texto, no el lugar — que es como se lee una leyenda.
+
+     Se apaga con `open` porque ahí abajo es exactamente donde entran las ideas
+     del gajo elegido, y dos textos peleando por el mismo renglón es lo único
+     peor que ningún texto. */
+  if(glosaGajo>=0&&glosaGajo<shown&&fan>0.12&&glosaAmt>0.004){
+    const g=proj.gajos[glosaGajo];
+    const a=vis*clamp((fan-0.12)/0.25)*(1-clamp(open*1.6))*glosaAmt;
+    if(g&&g.about&&a>0.004){
+      /* Los renglones se cortan una vez por gajo y no una vez por cuadro. La
+         escritura dura seis décimas: cortar lo mismo treinta y seis veces
+         seguidas para llegar al mismo resultado es medir el mismo papel treinta
+         y seis veces antes de escribir en él. Se rehace si cambia el gajo o si
+         cambia el ancho de la ventana, que son las dos cosas que mueven el
+         corte. */
+      if(glosaLines===null||glosaW!==W){
+        glosaW=W;
+        glosaLines=wrapMono(g.about,12,0.02,Math.min(W*0.78,520));
+      }
+      inkWrite(glosaLines,cx,cy+R0*0.52,12,ink,a*0.86,glosaInk,19);
     }
   }
   // nombre del proyecto
@@ -4487,6 +4910,9 @@ function frame(now){
          milisegundo. Éste es distinto — descarta un subárbol entero con una
          comparación, no mil doscientas. */
       if(view.y1>-2) drawRoots(roots,pe,t,camS);
+      /* El corte queda como descarte barato nomás: `drawSeed` ya sale sola
+         cuando la semilla se gastó, y su fundido cierra en 0.288 — antes que
+         este 0.29. El orden importa; al revés volvería el salto. */
       if(pe<0.29) drawSeed(pe);
       /* El LOD usa una escala rebajada por el desvanecido: cuando la fruta
          viaja hacia el espectador la cámara se acerca y las hojas subirían a
@@ -4521,7 +4947,7 @@ function frame(now){
     }
   }
 
-  if(interior>0) drawInterior(pe,t);
+  if(interior>0) drawInterior(pe,t,dt);
 
   drawBloom();
   ctx.setTransform(DPR,0,0,DPR,0,0);
