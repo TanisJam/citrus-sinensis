@@ -1,13 +1,14 @@
-# ciclo-react
+# Citrus × sinensis
 
-`ciclo.html` migrado a React. Misma pieza, misma matemática, mismos tests.
+El ciclo de un naranjo, de semilla a semilla, en un canvas 2D. Es la puerta de
+entrada de [mnr.ar](https://www.mnr.ar/).
 
 ```bash
 pnpm install
 pnpm dev
 pnpm build
-pnpm og                               # regenera la tarjeta social (necesita `pnpm dev`)
-cd .. && node test-loop-identity.js   # y los otros cuatro
+pnpm og        # regenera la tarjeta social (necesita `pnpm dev` corriendo)
+pnpm test      # los cinco tests del motor
 ```
 
 ## Qué se movió y qué no
@@ -134,9 +135,15 @@ más importante de la pieza.
 
 ## Los tests
 
-Siguen siendo los cinco de la raíz del repo, sin cambios de fondo. Cargan el
-motor con `engine-under-test.js`. `ciclo.html` queda intacto como referencia;
-ya no lo lee nadie.
+Son los cinco de siempre, sin cambios de fondo: viven en `tests/` y cargan el
+motor con `engine-under-test.js`, que lee `src/engine/engine.js` y le saca los
+`export` para poder evaluarlo.
+
+`tests/package.json` declara `"type": "commonjs"` y no es un descuido. Los cinco
+usan `require`, y antes eso funcionaba solo porque estaban en la raíz del repo
+viejo, fuera del alcance de cualquier `package.json`. Acá adentro los alcanza el
+`"type": "module"` del paquete, así que la carpeta tiene que declarar su propio
+sistema de módulos o Node los lee como ESM y no arrancan.
 
 ## El despliegue
 

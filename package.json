@@ -1,5 +1,5 @@
 {
-  "name": "ciclo-react",
+  "name": "citrus-sinensis",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "engine": "node scripts/build-engine.mjs",
     "og": "node scripts/build-og.mjs",
-    "test": "node ../test-loop-identity.js && node ../test-carryover.js && node ../test-sweep.js && node ../test-branching.js && node ../test-wind.js"
+    "test": "node tests/test-loop-identity.js && node tests/test-carryover.js && node tests/test-sweep.js && node tests/test-branching.js && node tests/test-wind.js"
   },
   "dependencies": {
     "react": "^19.2.8",
