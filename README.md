@@ -6,6 +6,7 @@
 pnpm install
 pnpm dev
 pnpm build
+pnpm og                               # regenera la tarjeta social (necesita `pnpm dev`)
 cd .. && node test-loop-identity.js   # y los otros cuatro
 ```
 
@@ -67,6 +68,27 @@ Dos cosas que hay que saber antes de tocar `src/content/bands.jsx`:
 canvas (`aria-hidden`) más cartelas que se apagan con `visibility:hidden`, así
 que sin ese bloque un lector de pantalla encuentra sólo la banda encendida y un
 buscador no encuentra nada.
+
+## La tarjeta social
+
+`public/og.jpg` **no es un mockup**: es un cuadro real del canvas en `p=0.78`
+—viraje de color, de noche, con el árbol cargado y la raíz a la vista— con el
+título inyectado como DOM y fotografiado junto con el dibujo. Por eso usa las
+mismas fuentes que la pieza y no una aproximación que se desalinea sola.
+
+```bash
+pnpm dev                        # en otra terminal
+pnpm og                         # http://localhost:5173 por defecto
+pnpm og http://localhost:5174   # o el puerto que haya tocado
+```
+
+Hay que volver a correrlo cuando cambie el nombre, el subtítulo o el dibujo. Es
+manual a propósito: treinta segundos por cambio, contra montar un navegador en
+cada `build`.
+
+La URL de `og:image` es **absoluta** —los crawlers no resuelven relativas— y
+apunta a la raíz, igual que `og:url` y el `canonical`. Si la pieza termina
+servida desde una subruta, esas tres se mueven juntas.
 
 ## El contrato del motor
 
