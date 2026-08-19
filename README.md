@@ -137,3 +137,33 @@ más importante de la pieza.
 Siguen siendo los cinco de la raíz del repo, sin cambios de fondo. Cargan el
 motor con `engine-under-test.js`. `ciclo.html` queda intacto como referencia;
 ya no lo lee nadie.
+
+## El despliegue
+
+La pieza es la puerta de entrada de `mnr.ar`: se queda con la raíz del dominio y
+le pasa todo lo demás —`/blog`, `/projects`, `/resume`, `/es`— al sitio de Astro
+de `portfolio-v3`, que vive en su propio repo y su propio proyecto de Vercel.
+
+El proyecto de Vercel apunta a este subdirectorio (**Root Directory =
+`ciclo-react`**); la raíz del repo es taller y no entra en el build.
+
+`vercel.json` tiene **una sola regla**, y la forma importa:
+
+```json
+{ "source": "/:path+", "destination": "https://<alias>/:path+" }
+```
+
+`:path+` exige **al menos un segmento**. Por eso `/` se queda acá y todo lo demás
+cae del otro lado, sin enumerar rutas: un post nuevo en el blog funciona sin
+tocar este archivo. El `<alias>` es el dominio de producción estable del proyecto
+de Astro, no el de un deploy puntual, o la regla queda apuntando a una versión
+congelada.
+
+La dirección no es intercambiable. Vercel resuelve el **filesystem antes que los
+rewrites**, así que si el dominio se lo quedara Astro, un rewrite de `/` hacia
+acá no dispararía nunca: su `index.html` existe y gana. El que sirve la raíz
+tiene que ser el dueño del dominio.
+
+De ahí también sale el `assetsDir` propio de `vite.config.js`: cualquier archivo
+que exista en este build gana antes de que el rewrite entre a jugar, y los dos
+proyectos publicaban en `/assets/`.
