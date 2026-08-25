@@ -26,6 +26,8 @@
  * gajos rotulados y las ideas de las que esta hecho. Una cartela encima de eso
  * taparia justo lo que el climax existe para mostrar.
  */
+import { WritingList } from '../components/WritingList.jsx'
+
 export const BANDS = [
   {
     /* `hero` la ancla arriba en vez de centrarla. La semilla ahora abre la pieza
@@ -97,24 +99,9 @@ export const BANDS = [
     body: (
       <>
         <h2>Writing</h2>
-        <ul className="rows">
-          <li>
-            <b><a href="/blog/an-orange-tree-that-grows-with-scroll/">An orange tree that grows with scroll</a></b>
-            <span>Aug 19, 2026</span>
-          </li>
-          <li>
-            <b><a href="/blog/from-portfolio-to-personal-site/">From portfolio to personal site</a></b>
-            <span>Apr 21, 2026</span>
-          </li>
-          <li>
-            <b><a href="/blog/leading-internal-tools-for-distributed-teams/">Leading internal tools for distributed teams</a></b>
-            <span>Apr 18, 2026</span>
-          </li>
-          <li>
-            <b><a href="/blog/ai-assisted-workflows-with-engineering-standards/">AI-assisted workflows without losing engineering standards</a></b>
-            <span>Apr 12, 2026</span>
-          </li>
-        </ul>
+        {/* Los cuatro ultimos posts, traidos del feed del blog. Escritos a mano
+            se quedaban atras cada vez que publicaba: ver WritingList.jsx. */}
+        <WritingList />
         <p className="meta"><a href="/blog">Read the blog →</a></p>
       </>
     ),
