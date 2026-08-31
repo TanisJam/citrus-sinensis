@@ -1,0 +1,36 @@
+# Mauricio Romero
+
+> Software Developer @ Aerolab, based in Argentina. Frontend systems and internal
+> tooling. This site (mnr.ar) is "Citrus x sinensis" — a scroll-driven canvas piece
+> that renders a portfolio inside the life cycle of an orange tree. The visible page
+> is a canvas, so this file is the machine-readable version of who I am and what I built.
+
+I build practical web interfaces and the systems behind them. I currently lead the
+frontend for an internal platform used by Endeavor staff across 40+ offices worldwide,
+focused on technical standards, code reviews, roadmap planning, and AI-assisted
+workflows that raise team quality. Frontend-heavy, comfortable across the stack —
+APIs, database, and infrastructure.
+
+## Skills
+
+- Languages & core: TypeScript, JavaScript, Node.js
+- Frontend: React, Next.js, Tailwind CSS, design systems, frontend architecture
+- Backend & data: Fastify, PostgreSQL, Supabase, Drizzle ORM, Zod
+- Infra & tooling: Docker, Vite, Playwright, CLI tooling
+- Practices: internal tooling, AI-assisted engineering workflows, Spec-Driven Development, code review, roadmap planning
+
+## Projects
+
+- [The Orange Mate](https://github.com/TanisJam/the-orange-mate): Full-stack social platform for solo travelers — Next.js 15, Supabase, real-time chat, Playwright E2E. Live: https://the-orange-mate-chi.vercel.app
+- [Dungeon Hub](https://github.com/TanisJam/dungeon-hub): Monorepo D&D companion — Fastify API + Next.js web + Discord bot, Drizzle, Zod domain layer.
+- [peel](https://github.com/TanisJam/peel): Published npm CLI for ephemeral git worktrees with managed dev servers.
+- [Orange Grove](https://github.com/TanisJam/orange-grove): Portable, tool-agnostic Spec-Driven Development harness.
+- [Just a Drop](https://github.com/TanisJam/just-a-drop): Ephemeral audio drops — Next.js, Cloudflare R2, Upstash Redis.
+- [Hecho Hex](https://github.com/TanisJam/hecho-hex): Geospatial message board on an H3 hex grid — Mapbox, Supabase. Live: https://hecho-hex.vercel.app
+
+## Contact
+
+- Website: https://www.mnr.ar
+- GitHub: https://github.com/TanisJam
+- LinkedIn: https://www.linkedin.com/in/mauricionromero/
+- Email: mauricionromero@hotmail.com

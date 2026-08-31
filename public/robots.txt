@@ -1,0 +1,46 @@
+# robots.txt for https://www.mnr.ar/
+# Citrus x sinensis - portfolio by Mauricio Romero
+
+# --- Default policy: this is a public portfolio, crawl it freely ---
+User-agent: *
+Allow: /
+# Content Signals (https://contentsignals.org/): declare AI usage preferences.
+# search=yes: index and link to this site.
+# ai-input=yes: use as grounding/RAG input for AI answers.
+# ai-train=no: do not use for training/fine-tuning models.
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+# --- AI crawlers: allowed to read, but not to train on the content ---
+User-agent: GPTBot
+Allow: /
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+User-agent: OAI-SearchBot
+Allow: /
+Content-Signal: search=yes, ai-input=yes
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+Content-Signal: ai-train=no
+
+Sitemap: https://www.mnr.ar/sitemap.xml

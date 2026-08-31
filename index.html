@@ -52,6 +52,113 @@
      cargado, y Source Serif 4 esta dibujada para cuerpos chicos en pantalla.
      Ninguna de las dos necesita apoyarse en el peso 300 para verse bien. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<!-- Datos estructurados. La pieza es un canvas: para un humano dice todo, para
+     una maquina son 51 caracteres de texto. Este bloque es el sitio contado en
+     un formato que buscadores y agentes SI leen — quien es el autor, que sabe
+     hacer, y los seis proyectos que cuelgan del arbol— sin ensuciar el canvas.
+     Emparejalo con el contenido visible: si cambia el trabajo o los proyectos,
+     esto se actualiza con ellos. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Person",
+      "@id": "https://www.mnr.ar/#mauricio",
+      "name": "Mauricio Romero",
+      "alternateName": "Mauricio Natanael Romero",
+      "url": "https://www.mnr.ar/",
+      "image": "https://www.mnr.ar/og.jpg",
+      "jobTitle": "Software Developer",
+      "worksFor": { "@type": "Organization", "name": "Aerolab" },
+      "email": "mailto:mauricionromero@hotmail.com",
+      "address": { "@type": "PostalAddress", "addressCountry": "AR" },
+      "knowsLanguage": ["es", "en"],
+      "description": "Software developer focused on frontend systems and internal tooling. Leads frontend for an internal platform used by Endeavor staff across 40+ offices worldwide.",
+      "knowsAbout": [
+        "TypeScript",
+        "React",
+        "Next.js",
+        "Node.js",
+        "Fastify",
+        "Tailwind CSS",
+        "Supabase",
+        "PostgreSQL",
+        "Drizzle ORM",
+        "Docker",
+        "Frontend systems",
+        "Internal tooling",
+        "Design systems",
+        "AI-assisted development",
+        "Spec-Driven Development"
+      ],
+      "sameAs": [
+        "https://github.com/TanisJam",
+        "https://www.linkedin.com/in/mauricionromero/"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://www.mnr.ar/#website",
+      "url": "https://www.mnr.ar/",
+      "name": "Citrus × sinensis — Mauricio Romero",
+      "description": "A scroll-driven life cycle of an orange tree, and a portfolio inside it. Six projects hang in the canopy; open one and it comes apart into the ideas it is made of.",
+      "inLanguage": "en",
+      "author": { "@id": "https://www.mnr.ar/#mauricio" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "The Orange Mate",
+      "description": "Full-stack social platform for solo travelers — Next.js 15, Supabase, real-time chat, Playwright E2E.",
+      "url": "https://the-orange-mate-chi.vercel.app",
+      "codeRepository": "https://github.com/TanisJam/the-orange-mate",
+      "programmingLanguage": "TypeScript",
+      "author": { "@id": "https://www.mnr.ar/#mauricio" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "Dungeon Hub",
+      "description": "Monorepo D&D companion — Fastify API + Next.js web + Discord bot, Drizzle, Zod domain layer.",
+      "codeRepository": "https://github.com/TanisJam/dungeon-hub",
+      "programmingLanguage": "TypeScript",
+      "author": { "@id": "https://www.mnr.ar/#mauricio" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "peel",
+      "description": "Published npm CLI for ephemeral git worktrees with managed dev servers.",
+      "codeRepository": "https://github.com/TanisJam/peel",
+      "programmingLanguage": "TypeScript",
+      "author": { "@id": "https://www.mnr.ar/#mauricio" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "Orange Grove",
+      "description": "Portable, tool-agnostic Spec-Driven Development harness.",
+      "codeRepository": "https://github.com/TanisJam/orange-grove",
+      "author": { "@id": "https://www.mnr.ar/#mauricio" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "Just a Drop",
+      "description": "Ephemeral audio drops — Next.js, Cloudflare R2, Upstash Redis.",
+      "codeRepository": "https://github.com/TanisJam/just-a-drop",
+      "programmingLanguage": "TypeScript",
+      "author": { "@id": "https://www.mnr.ar/#mauricio" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "Hecho Hex",
+      "description": "Geospatial message board on an H3 hex grid — Mapbox, Supabase.",
+      "url": "https://hecho-hex.vercel.app",
+      "codeRepository": "https://github.com/TanisJam/hecho-hex",
+      "programmingLanguage": "TypeScript",
+      "author": { "@id": "https://www.mnr.ar/#mauricio" }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <div id="root"></div>
