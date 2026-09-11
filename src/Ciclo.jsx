@@ -17,6 +17,10 @@ const INITIAL_HUD = {
   stage: STAGES[0].name,
   note: STAGES[0].note,
   dark: STAGES[0].dark,
+  /* La marca y la navegacion viran por su cuenta: ver `sampleChrome` en el
+     motor. */
+  brandDark: STAGES[0].dark,
+  navDark: STAGES[0].dark,
   from: '',
 }
 
@@ -108,6 +112,12 @@ export function Ciclo() {
   }, [])
 
   const scheme = hud.dark ? 'on-dark' : 'on-light'
+  /* La marca y la navegacion no miran lo mismo que el resto: estan pegadas al
+     borde de arriba, y ahi hay cielo mientras las bandas tienen tierra detras.
+     El motor lee los pixeles debajo de cada una y el esquema sale de ahi, uno
+     por lado. */
+  const brandScheme = hud.brandDark ? 'on-dark' : 'on-light'
+  const navScheme = hud.navDark ? 'on-dark' : 'on-light'
   /* La pista y la etiqueta se pisan en un telefono: la etiqueta mide 226px de
      ancho en una pantalla de 390 y la pista esta centrada, asi que "SCROLL"
      termina impreso adentro de la tarjeta. Se muestra una sola, y la que cede
@@ -121,8 +131,8 @@ export function Ciclo() {
       <div id="grain" aria-hidden="true" />
       <div id="flash" ref={flashRef} aria-hidden="true" />
 
-      <Brand scheme={scheme} onHome={goHome} />
-      <Nav scheme={scheme} />
+      <Brand scheme={brandScheme} onHome={goHome} />
+      <Nav scheme={navScheme} />
       <CycleRail scheme={scheme} dotRef={cycleDotRef} />
 
       {phase !== 'in' && (

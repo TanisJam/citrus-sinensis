@@ -4554,10 +4554,51 @@ function drawInterior(pe,t,dt){
 
    Las bandas llegan con su `el` desde el componente; el motor no las busca. */
 const bands=(host.bands||[]).map(b=>({el:b.el,from:b.from,to:b.to,vis:-1}));
-let lastStage='',lastNote='',lastAge='',lastDark=null,lastAcc='',lastFrom='';
+let lastStage='',lastNote='',lastAge='',lastDark=null,lastBrand=null,lastNav=null,lastAcc='',lastFrom='';
 /* Lo escribe `frame()` mirando el fondo, y lo leen tanto el chrome como las
    bandas. Arranca en falso porque el primer cuadro del ciclo es de día. */
 let bgDark=false;
+/* Lo mismo, para la MARCA y la NAVEGACIÓN — pero mirando el píxel, no el
+   modelo. `bgDark` estima el fondo detrás de las bandas a partir del cielo y la
+   tierra, y para las bandas alcanza: el cuadro entero en apaisado, el tercio
+   de abajo en vertical. La marca y la navegación no viven ahí: viven en los
+   primeros ~70px, que son cielo mientras las bandas tienen tierra detrás. En
+   `Hydrotropism` el cuadro promedia oscuro, la navegación se pintaba en hueso,
+   y hueso sobre un cielo de media mañana es texto que no está.
+   Y una estimación tampoco sirve para esa franja: en la fase interior el fondo
+   ya no es el cielo —la fruta pinta su propio telón— y el halo del sol pesa
+   distinto a cada lado. Así que se lee UNA fila del lienzo, ya pintado, cada
+   ocho cuadros, y se promedia el tramo debajo de cada uno de los dos. Un
+   `getImageData` de una fila de alto es un vaciado de unos pocos KB; a siete
+   veces por segundo no aparece en el presupuesto. Cada lado decide por su
+   cuenta: con el sol pegado a un borde, la marca y la navegación pueden tener
+   fondos de luma distinta, y la legibilidad va antes que la simetría.
+   Con histéresis, porque el crepúsculo cruza el umbral despacio y sin ella el
+   viraje parpadearía durante segundos alrededor de 0.42. */
+let brandDark=false,navDark=false,chromeN=0;
+function sampleChrome(){
+  if((chromeN++%8)!==0) return;
+  /* `--pad` del CSS, reproducido: clamp(18px,4.2vw,60px), y su variante para
+     ventanas bajas. La fila cae en el medio de la línea de texto. */
+  const pad=H<=560?Math.min(24,Math.max(14,W*0.024)):Math.min(60,Math.max(18,W*0.042));
+  const y=Math.min(H-1,Math.round((pad+7)*DPR));
+  /* Un contexto que no devuelve píxeles —el doble de los tests, un lienzo
+     contaminado— no vira nada: se queda el último esquema que sí se leyó. */
+  let row;
+  try{ row=ctx.getImageData(0,y,Math.max(1,Math.round(W*DPR)),1)?.data; }catch(e){ return; }
+  if(!row||row.length<4) return;
+  const luma=(x0,x1)=>{
+    let s=0,n=0;
+    for(let x=Math.max(0,x0);x<Math.min(x1,W);x+=6){
+      const i=Math.round(x*DPR)*4;
+      s+=0.2126*row[i]+0.7152*row[i+1]+0.0722*row[i+2];n++;
+    }
+    return n?s/(255*n):1;
+  };
+  const lb=luma(pad,pad+70), ln=luma(W-pad-280,W-pad);
+  if(brandDark ? lb>0.45 : lb<0.39) brandDark=!brandDark;
+  if(navDark ? ln>0.45 : ln<0.39) navDark=!navDark;
+}
 function updateDOM(pe,u,orange){
   /* Acá se le escribía a cada banda un `data-scheme` sacado de qué tan oscuro
      estaba REALMENTE el fondo detrás del texto, y con eso la banda viraba entre
@@ -4596,6 +4637,8 @@ function updateDOM(pe,u,orange){
   if(st.note!==lastNote){lastNote=st.note;(d||(d={})).note=st.note;}
   if(al!==lastAge){lastAge=al;(d||(d={})).age=al;}
   if(bgDark!==lastDark){lastDark=bgDark;(d||(d={})).dark=bgDark;}
+  if(brandDark!==lastBrand){lastBrand=brandDark;(d||(d={})).brandDark=brandDark;}
+  if(navDark!==lastNav){lastNav=navDark;(d||(d={})).navDark=navDark;}
   if(fromTxt!==lastFrom){lastFrom=fromTxt;(d||(d={})).from=fromTxt;}
   if(d) onHud(d);
 
@@ -5061,6 +5104,9 @@ function frame(now){
      menos de acoplamiento con React y cero costo. */
   if(refs.flash&&refs.flash.current) refs.flash.current.style.opacity='0';
 
+  /* Después del último trazo y antes de avisarle al DOM: lo que se lee es el
+     cuadro terminado, con la bruma incluida. */
+  sampleChrome();
   updateDOM(pe,pToS(p),orange);
   if(DEBUG){
     if(dbgN%30===0) dbgShown=dbgCalls;      // frame instrumentado: sólo la cuenta
