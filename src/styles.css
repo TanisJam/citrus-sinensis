@@ -255,12 +255,29 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 @keyframes gate-in{from{opacity:0}to{opacity:1}}
 .gate-card{background:rgb(var(--card));border:1px solid rgba(var(--card-edge),.16);
   box-shadow:0 10px 40px rgba(8,12,9,.34);border-radius:3px;
-  padding:34px 38px 30px;text-align:center;max-width:min(86vw,420px)}
+  padding:34px 38px 30px;text-align:center;max-width:min(86vw,460px)}
 .gate-kicker{margin:0;font-family:var(--mono);font-weight:500;font-size:10px;
-  letter-spacing:.22em;text-transform:uppercase;color:var(--accent-ink);opacity:.9}
-.gate-line{margin:14px 0 4px;font-family:var(--display);font-weight:400;
-  font-size:clamp(21px,3.4vw,27px);line-height:1.25;color:var(--ink)}
-.gate-go{display:inline-block;margin-top:20px;font-family:var(--mono);font-weight:600;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--accent-ink);opacity:.9;
+  line-height:1.6}
+.gate-kicker span{display:block}
+/* "Aerolab · Argentina" no se parte: si el ancho no da, cae entero a la
+   segunda linea y el punto medio no queda colgando al final de la primera. */
+.gate-role .nb{white-space:nowrap}
+/* La tapa repite la tipografia de la banda hero a escala de tarjeta: mismo
+   par romana/cursiva, mismo peso. Que se parezcan no es redundancia, es que la
+   tapa y la portada son la misma lamina. */
+.gate-name{margin:14px 0 0;font-family:var(--display);font-weight:600;
+  font-size:clamp(34px,5vw,46px);line-height:1;letter-spacing:-.01em;color:var(--ink)}
+.gate-name i{font-weight:500}
+.gate-role{margin:10px 0 0;font-family:var(--body);font-style:italic;
+  font-size:clamp(15px,1.5vw,17px);line-height:1.4;color:var(--ink);opacity:.8}
+/* Los metadatos —duracion, como se recorre, que suena— en el registro de la
+   etiqueta de especimen: mono, versalitas, separados por punto medio. */
+.gate-meta{margin:18px 0 0;display:flex;justify-content:center;flex-wrap:wrap;
+  font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink);opacity:.6}
+.gate-meta span+span::before{content:'·';margin:0 10px}
+.gate-go{display:inline-block;margin-top:22px;font-family:var(--mono);font-weight:600;
   font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#17100A;
   background:var(--accent);border:0;cursor:pointer;
   padding:13px 30px;border-radius:999px;box-shadow:0 2px 14px rgba(12,18,10,.24);
@@ -273,6 +290,12 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
   text-transform:uppercase;color:var(--ink);opacity:.5;
   border-bottom:1px solid currentColor;padding:0 0 2px;transition:opacity .3s}
 .gate-quiet:hover{opacity:.8}
+/* El atajo pesa menos que el silencio: es para quien no va a recorrer la pieza,
+   y no tiene que tentar a quien si. Mismo registro que la salida de abajo. */
+.gate-skip{display:inline-block;margin-top:22px;font-family:var(--mono);font-weight:500;
+  font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent-ink);text-decoration:none;opacity:.75;transition:opacity .3s}
+.gate-skip:hover{opacity:1}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 
 /* La pista. Vive en el mismo registro que la marca y el riel —mono, versalitas,
@@ -465,6 +488,19 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
   .band p{max-width:58ch;line-height:1.5;margin-bottom:10px}
   .band h1{font-size:clamp(34px,6vw,64px)}
   .band h2{font-size:clamp(24px,3.2vw,34px);margin-bottom:12px}
+  /* La tapa tambien: con nombre, rol y metadatos mide unos 360px de alto, y en
+     390px de ventana se le cortaban el borde de arriba y el de abajo. Se
+     aprieta —nombre mas chico, menos aire entre lineas— y la puerta pasa a
+     alinear arriba y a scrollear por si sola, por si aun asi no entra: una
+     tapa recortada es peor que una tapa que se desplaza. */
+  .gate{place-items:start center;overflow:auto;padding:var(--pad) 0}
+  .gate-card{padding:18px 26px 16px}
+  .gate-name{font-size:30px;margin-top:8px}
+  .gate-role{margin-top:6px;font-size:15px}
+  .gate-meta{margin-top:10px}
+  .gate-go{margin-top:12px;padding:10px 24px}
+  .gate-quiet{margin-top:10px}
+  .gate-skip{margin-top:12px}
   .band .sci{margin-top:12px}
   .rows{margin-top:14px}
   .rows li{padding:9px 0}
