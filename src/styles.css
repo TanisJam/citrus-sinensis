@@ -461,10 +461,6 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
    que las necesita para mirar que color hay detras de ESTA franja y decidir el
    viraje. Si se mueven aca, se mueven alla. */
 @media (max-width:820px) and (orientation:portrait){
-  /* En vertical la etiqueta del proyecto se estira de margen a margen, por
-     encima del control de sonido: el corte queda en el medio del cuadro y
-     abajo hay lugar de sobra. */
-  .tag{left:var(--pad);right:var(--pad);width:auto;bottom:calc(var(--pad) + 44px)}
   /* La portada tambien baja. Estaba anclada arriba —`.band.hero` pide
      `align-content:start`— porque el centro del cuadro era de la semilla; en
      esta composicion el centro del cuadro ES el dibujo entero, asi que la
@@ -484,6 +480,24 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
      la etiqueta se queda arriba con el dibujo y se decide aparte. Es una
      decision, no un olvido. */
   .label{display:none}
+}
+
+/* La cartela sigue al CORTE, no a la orientacion: son los mismos numeros que
+   `narrow` en drawInterior (W<900 y H>560), o le caia encima a la clave. */
+@media (max-width:899px) and (min-height:561px){
+  .tag{left:var(--pad);right:var(--pad);width:auto;bottom:calc(var(--pad) + 44px)}
+  .label{display:none}   /* el pie es de la cartela mientras dura el corte */
+}
+/* Y bajo 700px de alto no entran la clave Y una cartela de cinco renglones:
+   se aprieta como en apaisado, sin la frase. */
+@media (max-width:899px) and (min-height:561px) and (max-height:700px){
+  .tag{padding:10px 16px 12px}
+  .tag-line{display:none}
+  .tag-name{font-size:20px;margin-top:4px}
+  .tag-go{margin-top:2px}
+  .tag .go{padding:9px 16px;margin-top:6px}
+  .tag-src{margin-top:6px}
+  .tag-next{margin-top:10px}
 }
 
 /* Un telefono acostado mide 844 de ancho: pasa de largo el corte de 820 y se
