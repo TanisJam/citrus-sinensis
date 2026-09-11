@@ -62,10 +62,19 @@ export const IDEAS=[
    NO es libre: se dibuja envuelta a 520 px en mono de 12px, o sea unos 62
    caracteres por renglon, y el pie de la lamina tiene lugar para tres antes de
    chocar con las ideas. Por arriba de ~180 caracteres, la glosa se come el
-   dibujo que esta glosando. */
+   dibujo que esta glosando.
+
+   `live` y `line` son de la ETIQUETA DEL PROYECTO —la cartela de papel que
+   aparece al lado de la fruta abierta— y de la version accesible. `live` es la
+   instancia desplegada, si la hay; `liveLabel` renombra el boton cuando "live"
+   no describe el destino (un paquete en npm no esta "en vivo"). `line` es una
+   sola frase de que ES el proyecto: cabe en tres renglones de 300px de papel,
+   o sea unos setenta caracteres, y no repite el `meta`, que ya esta dibujado
+   arriba de la fruta. */
 export const PROJECTS=[
   {name:'The Orange Mate', meta:'Next.js · Supabase', hue:'#E8791B',
-   url:'https://github.com/TanisJam/the-orange-mate',
+   url:'https://github.com/TanisJam/the-orange-mate', live:'https://the-orange-mate.mnr.ar',
+   line:'Solo travellers find company and split the cost.',
    gajos:[
      {name:'Trip matching',   seeds:[1,5],
       about:'Post a plan — a stay, a ride, a whole trip — with dates and budget, and let other solo travellers join it.'},
@@ -80,6 +89,7 @@ export const PROJECTS=[
    ]},
   {name:'Dungeon Hub', meta:'Monorepo · Fastify', hue:'#F2A93C',
    url:'https://github.com/TanisJam/dungeon-hub',
+   line:'A West Marches D&D world: one domain package, three apps.',
    gajos:[
      {name:'Character sheets',seeds:[0,2],
       about:'Build and run 5e characters from a phone, with the rules doing the arithmetic instead of the player.'},
@@ -93,7 +103,8 @@ export const PROJECTS=[
       about:'A slash-command bot that pulls sheets and world data into the Discord where the table already is.'}
    ]},
   {name:'peel', meta:'CLI · npm', hue:'#E2661A',
-   url:'https://github.com/TanisJam/peel',
+   url:'https://github.com/TanisJam/peel', live:'https://www.npmjs.com/package/@tanisjam/peel', liveLabel:'npm',
+   line:'Any branch in its own worktree, dev server included, gone on exit.',
    gajos:[
      /* "Branch worktrees" y no "Worktree per branch": los rotulos del interior
         se dibujan en mono de 12px a los costados del abanico de gajos, y a
@@ -112,6 +123,7 @@ export const PROJECTS=[
    ]},
   {name:'Orange Grove', meta:'SDD harness · CLI', hue:'#F5B84A',
    url:'https://github.com/TanisJam/orange-grove',
+   line:'No implementation before approved specs — eight phases, any agent.',
    gajos:[
      {name:'Spec before code',seeds:[4,1],
       about:'Don’t harvest before you plant: eight phases, and no implementation until the specs are approved.'},
@@ -125,7 +137,8 @@ export const PROJECTS=[
       about:'The same harness in Claude Code, opencode, Cursor or Codex, through one adapter per tool.'}
    ]},
   {name:'Just a Drop', meta:'Next.js · R2', hue:'#EE8A1C',
-   url:'https://github.com/TanisJam/just-a-drop',
+   url:'https://github.com/TanisJam/just-a-drop', live:'https://just-a-drop.mnr.ar',
+   line:'A voice note that plays once, then is gone.',
    gajos:[
      {name:'Browser recorder',seeds:[6,1],
       about:'MediaRecorder in the browser — tap, speak, tap. No app to install, nothing to sign up for.'},
@@ -139,7 +152,8 @@ export const PROJECTS=[
       about:'An hourly cron walks the index and scrubs consumed and expired drops from R2 and Redis both.'}
    ]},
   {name:'Hecho Hex', meta:'Mapbox · H3', hue:'#D9591C',
-   url:'https://github.com/TanisJam/hecho-hex',
+   url:'https://github.com/TanisJam/hecho-hex', live:'https://hecho-hex.mnr.ar',
+   line:'Anonymous notes pinned to the map, pooled by H3 cell, gone in 48 h.',
    gajos:[
      {name:'Hex tiling',      seeds:[2,6],
       about:'H3 tessellates the map at resolution seven to nine by zoom, and each cell is its own board.'},
@@ -3603,6 +3617,13 @@ const IN_BARE =[0.886,0.024];   // el albedo se rasga           → pausa hasta 
 const IN_FAN  =[0.916,0.020];   // los carpelos se separan      → pausa hasta 0.936
 const IN_OPEN =[0.936,0.008];   // se abre el elegido
 const IN_REL  =[0.942,0.008];   // y suelta la semilla, que abre la vuelta siguiente
+/* La ventana de la ETIQUETA DEL PROYECTO: desde que termina el giro —la fruta
+   ya es un corte con nombre— hasta justo antes de la suelta. No es una banda:
+   las bandas terminan en 0.80 porque una cartela sobre el climax tapa lo que
+   el climax existe para mostrar. Esta va en la esquina baja derecha, donde el
+   corte y sus rotulos no llegan, y existe por lo unico que el climax no puede
+   dibujar: un enlace. La fruta abierta sin un lugar adonde ir era un callejon. */
+const TAG_ON=0.884, TAG_OFF=0.940;
 const ramp=(pe,r)=>clamp((pe-r[0])/r[1]);
 
 /* ============ el puntero sobre los gajos ============
@@ -3751,7 +3772,8 @@ function drawInterior(pe,t,dt){
 
   const proj=PROJECTS[chosenFruit];
   const src=fruitScreen[chosenFruit]||{x:W/2,y:H*0.4,r:26};
-  const R0=Math.min(W,H)*0.30;
+  const narrow=W<900&&H>560, squat=narrow&&H<700;   // ver el comentario de abajo
+  const R0=Math.min(W,squat?H*0.75:H)*0.30;
 
   // la fruta viaja del árbol al centro y crece
   /* La fruta llega y FRENA. Con smoothstep se posa como una pluma, sin peso:
@@ -3763,7 +3785,19 @@ function drawInterior(pe,t,dt){
      opacidad sigue con la curva monótona. */
   const e=growOut(enter);
   const eA=smooth(enter);
-  const cx=lerp(src.x,W/2,e), cy=lerp(src.y,H*0.47,e);
+  /* `narrow` gobierna los rótulos del corte (ver "etiquetas", más abajo). Se
+     decide acá arriba porque también mueve el centro: en un teléfono chico y
+     parado —320 por 640— la clave numerada y las ideas no entran debajo del
+     abanico con el centro al 47%, y la cartela del proyecto las tapaba. Se sube
+     el conjunto entero; el nombre sigue quedando por debajo de la navegación.
+     Y NO es sólo ancho: un teléfono acostado mide 844 de ancho y 390 de alto,
+     y ahí la clave no tiene dónde caer —debajo del abanico está la tira de la
+     etiqueta y después el borde—, mientras que los rótulos al costado sí
+     entran. Angosto es angosto Y alto; los 560 son el mismo corte que usa el
+     CSS para las ventanas bajas. Y los MISMOS dos números están en styles.css
+     —`(max-width:899px) and (min-height:561px)`—: si se mueve uno, el otro.
+     `squat` es angosto y bajo: la fruta se escala al alto y el centro sube. */
+  const cx=lerp(src.x,W/2,e), cy=lerp(src.y,squat?Math.max(H*0.41,68+R0*1.30):H*0.47,e);
   const R=lerp(src.r,R0,e);
 
   ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -4426,6 +4460,21 @@ function drawInterior(pe,t,dt){
 
   // ---------- etiquetas (fuera de la rotación) ----------
   const ink='#20180E';
+  /* En una ventana angosta los rótulos no pueden salir a los costados: el
+     abanico ya ocupa el 69% del ancho y un nombre de dieciséis letras a cada
+     lado se va por el borde —se veía "PLITTING" y "COMPANIO" en un teléfono—.
+     Ahí la lámina cambia de convención: NUMERA. Un numeral en la base de cada
+     gajo y una clave debajo del abanico, una columna con número y nombre.
+     Es la otra disposición clásica de una lámina rotulada —la de los cortes
+     apretados— y la única que no cruza guías ni depende del ancho: se probó
+     escalonar los rótulos en dos filas bajo sus carpelos y los de las puntas,
+     sujetos al margen, se metían encima del del medio.
+     Los 900px salen de medir: por debajo, "END-TO-END TESTS" al costado del
+     carpelo extremo ya se va por el borde (en 768 se leía "IP MATCHING"). */
+  const colW=narrow?Math.max(...proj.gajos.map(g=>g.name.length))*7.8+18:0;
+  /* La clave empieza debajo de los numerales de las bases y todo lo que va al
+     pie —glosa, ideas— se cuelga de su última fila, no de una fracción de R0. */
+  const keyTop=cy+R0*0.50+12, keyBottom=keyTop+(shown-1)*14;
   if(fan>0.12){
     for(let i=0;i<shown;i++){
       const sel=i===chosenGajo;
@@ -4456,6 +4505,21 @@ function drawInterior(pe,t,dt){
       /* Cinco nombres largos no entran uno al lado del otro arriba. Los de
          los extremos salen al costado, hacia el espacio libre, y sólo el del
          medio va arriba. Es la disposición de una lámina rotulada. */
+      if(narrow){
+        const bx=cx+rowX*f, by=cy+rowY*f+3;          // la base del gajo
+        const num=String(i+1);
+        // El numeral en la base, con su punto: es el mismo punto terminal de
+        // las guías, sólo que la guía ahora es un número.
+        ctx.globalAlpha=a*0.6;ctx.fillStyle=ink;
+        ctx.beginPath();ctx.arc(bx,by,1.6,0,6.283);ctx.fill();
+        ctx.globalAlpha=1;
+        label(num,bx,by+10,'center',9,ink,a*0.9,600,0.02);
+        // La clave: una columna centrada bajo el abanico, número y nombre.
+        const ly=keyTop+i*14, colX=cx-colW/2;
+        label(num,colX,ly,'left',9,ink,a*0.6,600,0.02);
+        label(proj.gajos[i].name.toUpperCase(),colX+16,ly,'left',10,ink,a*lerp(0.7,1,em),600,0.18);
+        continue;
+      }
       const side=Math.abs(k)>0.24?Math.sign(k):0;
       let lx,ly,align,el;
       if(side){
@@ -4515,7 +4579,10 @@ function drawInterior(pe,t,dt){
         glosaW=W;
         glosaLines=wrapMono(g.about,12,0.02,Math.min(W*0.78,520));
       }
-      inkWrite(glosaLines,cx,cy+R0*0.52,12,ink,a*0.86,glosaInk,19);
+      /* En angosto la clave ocupa el pie, así que la glosa baja hasta debajo
+         de la última fila. Se cruza con las ideas sólo durante el fundido en
+         que una se va y las otras llegan. */
+      inkWrite(glosaLines,cx,narrow?keyBottom+22:cy+R0*0.52,12,ink,a*0.86,glosaInk,19);
     }
   }
   // nombre del proyecto
@@ -4527,11 +4594,13 @@ function drawInterior(pe,t,dt){
   // ideas
   if(open>0.2){
     const seeds=PROJECTS[chosenFruit].gajos[chosenGajo].seeds;
+    // En angosto las ideas van debajo de la clave, que es lo que ocupa el pie.
+    const hy=narrow?keyBottom+26:cy+R*1.02;
     for(let k=0;k<seeds.length;k++){
       const a=vis*clamp((open-0.2-k*0.12)/0.35)*(k===0?1:1-release);
-      label(IDEAS[seeds[k]],cx,cy+R*(1.16+k*0.17),'center',14,ink,a,600);
+      label(IDEAS[seeds[k]],cx,narrow?hy+17*(k+1):cy+R*(1.16+k*0.17),'center',14,ink,a,600);
     }
-    label('IDEAS THIS IS MADE OF',cx,cy+R*1.02,'center',11,ink,
+    label('IDEAS THIS IS MADE OF',cx,hy,'center',11,ink,
       vis*clamp((open-0.2)/0.3)*0.62,500);
   }
   // devolver la luz de la escena
@@ -4554,10 +4623,57 @@ function drawInterior(pe,t,dt){
 
    Las bandas llegan con su `el` desde el componente; el motor no las busca. */
 const bands=(host.bands||[]).map(b=>({el:b.el,from:b.from,to:b.to,vis:-1}));
-let lastStage='',lastNote='',lastAge='',lastDark=null,lastAcc='',lastFrom='';
+let lastStage='',lastNote='',lastAge='',lastDark=null,lastBrand=null,lastNav=null,lastAcc='',lastFrom='',
+    lastProject=-1,lastTag=null;
 /* Lo escribe `frame()` mirando el fondo, y lo leen tanto el chrome como las
    bandas. Arranca en falso porque el primer cuadro del ciclo es de día. */
 let bgDark=false;
+/* Lo mismo, para la MARCA y la NAVEGACIÓN — pero mirando el píxel, no el
+   modelo. `bgDark` estima el fondo detrás de las bandas a partir del cielo y la
+   tierra, y para las bandas alcanza: el cuadro entero en apaisado, el tercio
+   de abajo en vertical. La marca y la navegación no viven ahí: viven en los
+   primeros ~70px, que son cielo mientras las bandas tienen tierra detrás. En
+   `Hydrotropism` el cuadro promedia oscuro, la navegación se pintaba en hueso,
+   y hueso sobre un cielo de media mañana es texto que no está.
+   Y una estimación tampoco sirve para esa franja: en la fase interior el fondo
+   ya no es el cielo —la fruta pinta su propio telón— y el halo del sol pesa
+   distinto a cada lado. Así que se lee UNA fila del lienzo, ya pintado, cada
+   ocho cuadros, y se promedia el tramo debajo de cada uno de los dos. Un
+   `getImageData` de una fila de alto es un vaciado de unos pocos KB; a siete
+   veces por segundo no aparece en el presupuesto. Cada lado decide por su
+   cuenta: con el sol pegado a un borde, la marca y la navegación pueden tener
+   fondos de luma distinta, y la legibilidad va antes que la simetría.
+   Con histéresis, porque el crepúsculo cruza el umbral despacio y sin ella el
+   viraje parpadearía durante segundos alrededor de 0.42. */
+let brandDark=false,navDark=false,chromeN=0;
+/* `--pad` del CSS, reproducido: clamp(18px,4.2vw,60px), y su variante para
+   ventanas bajas. Lo usan el muestreo de la franja de arriba y los rótulos
+   del corte en angosto, que se sujetan al mismo margen que todo lo fijo. */
+function cssPad(){
+  return H<=560?Math.min(24,Math.max(14,W*0.024)):Math.min(60,Math.max(18,W*0.042));
+}
+function sampleChrome(){
+  if((chromeN++%8)!==0) return;
+  /* La fila cae en el medio de la línea de texto. */
+  const pad=cssPad();
+  const y=Math.min(H-1,Math.round((pad+7)*DPR));
+  /* Un contexto que no devuelve píxeles —el doble de los tests, un lienzo
+     contaminado— no vira nada: se queda el último esquema que sí se leyó. */
+  let row;
+  try{ row=ctx.getImageData(0,y,Math.max(1,Math.round(W*DPR)),1)?.data; }catch(e){ return; }
+  if(!row||row.length<4) return;
+  const luma=(x0,x1)=>{
+    let s=0,n=0;
+    for(let x=Math.max(0,x0);x<Math.min(x1,W);x+=6){
+      const i=Math.round(x*DPR)*4;
+      s+=0.2126*row[i]+0.7152*row[i+1]+0.0722*row[i+2];n++;
+    }
+    return n?s/(255*n):1;
+  };
+  const lb=luma(pad,pad+70), ln=luma(W-pad-280,W-pad);
+  if(brandDark ? lb>0.45 : lb<0.39) brandDark=!brandDark;
+  if(navDark ? ln>0.45 : ln<0.39) navDark=!navDark;
+}
 function updateDOM(pe,u,orange){
   /* Acá se le escribía a cada banda un `data-scheme` sacado de qué tan oscuro
      estaba REALMENTE el fondo detrás del texto, y con eso la banda viraba entre
@@ -4596,7 +4712,14 @@ function updateDOM(pe,u,orange){
   if(st.note!==lastNote){lastNote=st.note;(d||(d={})).note=st.note;}
   if(al!==lastAge){lastAge=al;(d||(d={})).age=al;}
   if(bgDark!==lastDark){lastDark=bgDark;(d||(d={})).dark=bgDark;}
+  if(brandDark!==lastBrand){lastBrand=brandDark;(d||(d={})).brandDark=brandDark;}
+  if(navDark!==lastNav){lastNav=navDark;(d||(d={})).navDark=navDark;}
   if(fromTxt!==lastFrom){lastFrom=fromTxt;(d||(d={})).from=fromTxt;}
+  /* La etiqueta del proyecto: cual, y si le toca estar. Cambian una vez por
+     vuelta —o cuando la pagina elige— asi que van por el mismo aviso. */
+  const tagOn=pe>=TAG_ON&&pe<TAG_OFF;
+  if(chosenFruit!==lastProject){lastProject=chosenFruit;(d||(d={})).project=chosenFruit;}
+  if(tagOn!==lastTag){lastTag=tagOn;(d||(d={})).tag=tagOn;}
   if(d) onHud(d);
 
   /* El sonido, en cambio, quiere el frame entero. Se le manda `pe` y no `p`
@@ -5061,6 +5184,9 @@ function frame(now){
      menos de acoplamiento con React y cero costo. */
   if(refs.flash&&refs.flash.current) refs.flash.current.style.opacity='0';
 
+  /* Después del último trazo y antes de avisarle al DOM: lo que se lee es el
+     cuadro terminado, con la bruma incluida. */
+  sampleChrome();
   updateDOM(pe,pToS(p),orange);
   if(DEBUG){
     if(dbgN%30===0) dbgShown=dbgCalls;      // frame instrumentado: sólo la cuenta
@@ -5105,6 +5231,21 @@ return {
   home(){
     window.scrollTo(0,0);
     target=0;p=0;pPrev=0;skipV=true;
+  },
+  /* Elegir la fruta, desde la pagina. Es la unica eleccion que la pieza acepta
+     y esta anunciada: la ofrece la etiqueta del proyecto ("Next fruit"), que
+     solo existe cuando ya hay una fruta abierta y nombrada. No es el puntero
+     eligiendo a ciegas —eso se fue por trampa—, es un boton con nombre.
+     Salta a 0.74, ANTES de la ventana de seleccion (0.745): asi la vuelta corta
+     empieza por ver que fruta se destaca en la copa y recien despues viaja al
+     interior. `carried` y el gajo no se tocan: cambia el proyecto, no la
+     vuelta. Mismo salto seco que `home`, por las mismas razones. */
+  pick(i){
+    const n=PROJECTS.length;
+    chosenFruit=((i%n)+n)%n;
+    const np=0.74;
+    target=np;p=np;pPrev=np;skipV=true;
+    window.scrollTo(0,pToS(np)*maxScroll());
   },
   /* Diagnóstico. La pieza dejó de ser función de `pe` y sólo de `pe`: cuál
      proyecto se muestra depende de CUÁNTAS VUELTAS lleva, y eso es deliberado

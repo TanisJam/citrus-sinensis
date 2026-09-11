@@ -7,6 +7,7 @@ import { SpecimenLabel } from './components/SpecimenLabel.jsx'
 import { Brand, Nav, CycleRail } from './components/Chrome.jsx'
 import { TextIndex } from './components/TextIndex.jsx'
 import { Gate, ScrollHint, SoundToggle } from './components/Gate.jsx'
+import { ProjectTag } from './components/ProjectTag.jsx'
 
 /* El primer pintado tiene que salir ya con la etiqueta puesta. Un estado
    inicial vacio se ve: la pieza abre con "day 0 / DISPERSAL" en blanco y el
@@ -17,7 +18,14 @@ const INITIAL_HUD = {
   stage: STAGES[0].name,
   note: STAGES[0].note,
   dark: STAGES[0].dark,
+  /* La marca y la navegacion viran por su cuenta: ver `sampleChrome` en el
+     motor. */
+  brandDark: STAGES[0].dark,
+  navDark: STAGES[0].dark,
   from: '',
+  /* La etiqueta del proyecto: cual fruta y si esta a la vista. */
+  project: 0,
+  tag: false,
 }
 
 /* ============================================================
@@ -83,6 +91,12 @@ export function Ciclo() {
      tenerlo no cambia nada de lo que se renderiza. */
   const engineRef = useRef(null)
   const goHome = useCallback(() => { engineRef.current?.home() }, [])
+  /* Y la segunda: la fruta siguiente, desde la etiqueta del proyecto. El motor
+     ya sabe cual es la actual; la pagina solo pide "la que sigue". */
+  const nextFruit = useCallback(() => {
+    const e = engineRef.current
+    if (e) e.pick(e.state().fruit + 1)
+  }, [])
 
   useEffect(() => {
     /* Las referencias de los hijos ya estan puestas cuando corre este efecto:
@@ -108,6 +122,12 @@ export function Ciclo() {
   }, [])
 
   const scheme = hud.dark ? 'on-dark' : 'on-light'
+  /* La marca y la navegacion no miran lo mismo que el resto: estan pegadas al
+     borde de arriba, y ahi hay cielo mientras las bandas tienen tierra detras.
+     El motor lee los pixeles debajo de cada una y el esquema sale de ahi, uno
+     por lado. */
+  const brandScheme = hud.brandDark ? 'on-dark' : 'on-light'
+  const navScheme = hud.navDark ? 'on-dark' : 'on-light'
   /* La pista y la etiqueta se pisan en un telefono: la etiqueta mide 226px de
      ancho en una pantalla de 390 y la pista esta centrada, asi que "SCROLL"
      termina impreso adentro de la tarjeta. Se muestra una sola, y la que cede
@@ -121,8 +141,8 @@ export function Ciclo() {
       <div id="grain" aria-hidden="true" />
       <div id="flash" ref={flashRef} aria-hidden="true" />
 
-      <Brand scheme={scheme} onHome={goHome} />
-      <Nav scheme={scheme} />
+      <Brand scheme={brandScheme} onHome={goHome} />
+      <Nav scheme={navScheme} />
       <CycleRail scheme={scheme} dotRef={cycleDotRef} />
 
       {phase !== 'in' && (
@@ -132,6 +152,8 @@ export function Ciclo() {
       {hintUp && (
         <ScrollHint scheme={scheme} onDone={() => setHinting(false)} />
       )}
+
+      <ProjectTag project={hud.project} on={phase === 'in' && hud.tag} onNext={nextFruit} />
 
       <SpecimenLabel
         labelRef={labelRef}

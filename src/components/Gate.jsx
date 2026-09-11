@@ -63,9 +63,23 @@ export function Gate({ onEnter, leaving, onGone }) {
       className={`gate ${leaving ? 'gate-out' : ''}`}
       onTransitionEnd={leaving ? done : undefined}
     >
+      {/* La puerta es la TAPA de la lamina, no un aviso de sonido. Es el unico
+          cuadro que ve el cien por ciento de los visitantes, asi que lleva lo
+          que una tapa lleva: titulo, autor, y cuanto dura. El aviso de sonido
+          sigue estando —en la linea de metadatos— pero deja de ser lo unico que
+          se lee en los primeros dos segundos.
+
+          El nombre va en <p> y no en <h1>: el h1 de la pagina es el de la banda
+          hero, y una tapa que se desmonta no tiene que dejar dos titulos
+          principales en el arbol de accesibilidad. */}
       <div className="gate-card">
-        <p className="gate-kicker">Field recording — synthesised</p>
-        <p className="gate-line">This piece has sound.</p>
+        {/* Dos lineas a proposito y no una que se parte donde caiga: el nombre
+            de la especie y el subtitulo son dos cosas, y el corte va entre
+            ellas, no en "GROWING / SEASON". */}
+        <p className="gate-kicker"><span>Citrus × sinensis</span><span>A portfolio in one growing season</span></p>
+        <p className="gate-name">Mauricio <i>Romero</i></p>
+        <p className="gate-role">Software developer at <span className="nb">Aerolab · Argentina</span></p>
+        <p className="gate-meta"><span>≈ 2 min</span><span>scroll</span><span>has sound</span></p>
         <button type="button" className="gate-go" onClick={go(true)}>
           Begin
         </button>
@@ -74,6 +88,10 @@ export function Gate({ onEnter, leaving, onGone }) {
         <button type="button" className="gate-quiet" onClick={go(false)}>
           Enter in silence
         </button>
+        {/* La salida para quien vino a ver el trabajo y no tiene dos minutos.
+            Es un enlace y no un boton porque navega: la puerta se va con la
+            pagina, y el bloqueo de scroll se limpia solo en el desmontaje. */}
+        <a className="gate-skip" href="/projects">Skip to the projects →</a>
       </div>
     </div>
   )
