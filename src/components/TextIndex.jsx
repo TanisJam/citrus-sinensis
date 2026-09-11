@@ -62,6 +62,15 @@ export function TextIndex() {
             <a href={p.url} rel="noopener noreferrer" target="_blank">
               {p.name} — {p.meta}.
             </a>
+            {' '}{p.line}
+            {p.live && (
+              <>
+                {' '}
+                <a href={p.live} rel="noopener noreferrer" target="_blank">
+                  {p.liveLabel ?? 'Live'}
+                </a>
+              </>
+            )}
             <ul>
               {p.gajos.map(g => (
                 <li key={g.name}>{g.name} — {g.about}</li>

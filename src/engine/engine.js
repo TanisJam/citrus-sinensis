@@ -62,10 +62,19 @@ export const IDEAS=[
    NO es libre: se dibuja envuelta a 520 px en mono de 12px, o sea unos 62
    caracteres por renglon, y el pie de la lamina tiene lugar para tres antes de
    chocar con las ideas. Por arriba de ~180 caracteres, la glosa se come el
-   dibujo que esta glosando. */
+   dibujo que esta glosando.
+
+   `live` y `line` son de la ETIQUETA DEL PROYECTO —la cartela de papel que
+   aparece al lado de la fruta abierta— y de la version accesible. `live` es la
+   instancia desplegada, si la hay; `liveLabel` renombra el boton cuando "live"
+   no describe el destino (un paquete en npm no esta "en vivo"). `line` es una
+   sola frase de que ES el proyecto: cabe en tres renglones de 300px de papel,
+   o sea unos setenta caracteres, y no repite el `meta`, que ya esta dibujado
+   arriba de la fruta. */
 export const PROJECTS=[
   {name:'The Orange Mate', meta:'Next.js · Supabase', hue:'#E8791B',
-   url:'https://github.com/TanisJam/the-orange-mate',
+   url:'https://github.com/TanisJam/the-orange-mate', live:'https://the-orange-mate.mnr.ar',
+   line:'Solo travellers find company and split the cost.',
    gajos:[
      {name:'Trip matching',   seeds:[1,5],
       about:'Post a plan — a stay, a ride, a whole trip — with dates and budget, and let other solo travellers join it.'},
@@ -80,6 +89,7 @@ export const PROJECTS=[
    ]},
   {name:'Dungeon Hub', meta:'Monorepo · Fastify', hue:'#F2A93C',
    url:'https://github.com/TanisJam/dungeon-hub',
+   line:'A West Marches D&D world: one domain package, three apps.',
    gajos:[
      {name:'Character sheets',seeds:[0,2],
       about:'Build and run 5e characters from a phone, with the rules doing the arithmetic instead of the player.'},
@@ -93,7 +103,8 @@ export const PROJECTS=[
       about:'A slash-command bot that pulls sheets and world data into the Discord where the table already is.'}
    ]},
   {name:'peel', meta:'CLI · npm', hue:'#E2661A',
-   url:'https://github.com/TanisJam/peel',
+   url:'https://github.com/TanisJam/peel', live:'https://www.npmjs.com/package/@tanisjam/peel', liveLabel:'npm',
+   line:'Any branch in its own worktree, dev server included, gone on exit.',
    gajos:[
      /* "Branch worktrees" y no "Worktree per branch": los rotulos del interior
         se dibujan en mono de 12px a los costados del abanico de gajos, y a
@@ -112,6 +123,7 @@ export const PROJECTS=[
    ]},
   {name:'Orange Grove', meta:'SDD harness · CLI', hue:'#F5B84A',
    url:'https://github.com/TanisJam/orange-grove',
+   line:'No implementation before approved specs — eight phases, any agent.',
    gajos:[
      {name:'Spec before code',seeds:[4,1],
       about:'Don’t harvest before you plant: eight phases, and no implementation until the specs are approved.'},
@@ -125,7 +137,8 @@ export const PROJECTS=[
       about:'The same harness in Claude Code, opencode, Cursor or Codex, through one adapter per tool.'}
    ]},
   {name:'Just a Drop', meta:'Next.js · R2', hue:'#EE8A1C',
-   url:'https://github.com/TanisJam/just-a-drop',
+   url:'https://github.com/TanisJam/just-a-drop', live:'https://just-a-drop.mnr.ar',
+   line:'A voice note that plays once, then is gone.',
    gajos:[
      {name:'Browser recorder',seeds:[6,1],
       about:'MediaRecorder in the browser — tap, speak, tap. No app to install, nothing to sign up for.'},
@@ -139,7 +152,8 @@ export const PROJECTS=[
       about:'An hourly cron walks the index and scrubs consumed and expired drops from R2 and Redis both.'}
    ]},
   {name:'Hecho Hex', meta:'Mapbox · H3', hue:'#D9591C',
-   url:'https://github.com/TanisJam/hecho-hex',
+   url:'https://github.com/TanisJam/hecho-hex', live:'https://hecho-hex.mnr.ar',
+   line:'Anonymous notes pinned to the map, pooled by H3 cell, gone in 48 h.',
    gajos:[
      {name:'Hex tiling',      seeds:[2,6],
       about:'H3 tessellates the map at resolution seven to nine by zoom, and each cell is its own board.'},
@@ -3603,6 +3617,13 @@ const IN_BARE =[0.886,0.024];   // el albedo se rasga           → pausa hasta 
 const IN_FAN  =[0.916,0.020];   // los carpelos se separan      → pausa hasta 0.936
 const IN_OPEN =[0.936,0.008];   // se abre el elegido
 const IN_REL  =[0.942,0.008];   // y suelta la semilla, que abre la vuelta siguiente
+/* La ventana de la ETIQUETA DEL PROYECTO: desde que termina el giro —la fruta
+   ya es un corte con nombre— hasta justo antes de la suelta. No es una banda:
+   las bandas terminan en 0.80 porque una cartela sobre el climax tapa lo que
+   el climax existe para mostrar. Esta va en la esquina baja derecha, donde el
+   corte y sus rotulos no llegan, y existe por lo unico que el climax no puede
+   dibujar: un enlace. La fruta abierta sin un lugar adonde ir era un callejon. */
+const TAG_ON=0.884, TAG_OFF=0.940;
 const ramp=(pe,r)=>clamp((pe-r[0])/r[1]);
 
 /* ============ el puntero sobre los gajos ============
@@ -4554,7 +4575,8 @@ function drawInterior(pe,t,dt){
 
    Las bandas llegan con su `el` desde el componente; el motor no las busca. */
 const bands=(host.bands||[]).map(b=>({el:b.el,from:b.from,to:b.to,vis:-1}));
-let lastStage='',lastNote='',lastAge='',lastDark=null,lastBrand=null,lastNav=null,lastAcc='',lastFrom='';
+let lastStage='',lastNote='',lastAge='',lastDark=null,lastBrand=null,lastNav=null,lastAcc='',lastFrom='',
+    lastProject=-1,lastTag=null;
 /* Lo escribe `frame()` mirando el fondo, y lo leen tanto el chrome como las
    bandas. Arranca en falso porque el primer cuadro del ciclo es de día. */
 let bgDark=false;
@@ -4640,6 +4662,11 @@ function updateDOM(pe,u,orange){
   if(brandDark!==lastBrand){lastBrand=brandDark;(d||(d={})).brandDark=brandDark;}
   if(navDark!==lastNav){lastNav=navDark;(d||(d={})).navDark=navDark;}
   if(fromTxt!==lastFrom){lastFrom=fromTxt;(d||(d={})).from=fromTxt;}
+  /* La etiqueta del proyecto: cual, y si le toca estar. Cambian una vez por
+     vuelta —o cuando la pagina elige— asi que van por el mismo aviso. */
+  const tagOn=pe>=TAG_ON&&pe<TAG_OFF;
+  if(chosenFruit!==lastProject){lastProject=chosenFruit;(d||(d={})).project=chosenFruit;}
+  if(tagOn!==lastTag){lastTag=tagOn;(d||(d={})).tag=tagOn;}
   if(d) onHud(d);
 
   /* El sonido, en cambio, quiere el frame entero. Se le manda `pe` y no `p`
@@ -5151,6 +5178,21 @@ return {
   home(){
     window.scrollTo(0,0);
     target=0;p=0;pPrev=0;skipV=true;
+  },
+  /* Elegir la fruta, desde la pagina. Es la unica eleccion que la pieza acepta
+     y esta anunciada: la ofrece la etiqueta del proyecto ("Next fruit"), que
+     solo existe cuando ya hay una fruta abierta y nombrada. No es el puntero
+     eligiendo a ciegas —eso se fue por trampa—, es un boton con nombre.
+     Salta a 0.74, ANTES de la ventana de seleccion (0.745): asi la vuelta corta
+     empieza por ver que fruta se destaca en la copa y recien despues viaja al
+     interior. `carried` y el gajo no se tocan: cambia el proyecto, no la
+     vuelta. Mismo salto seco que `home`, por las mismas razones. */
+  pick(i){
+    const n=PROJECTS.length;
+    chosenFruit=((i%n)+n)%n;
+    const np=0.74;
+    target=np;p=np;pPrev=np;skipV=true;
+    window.scrollTo(0,pToS(np)*maxScroll());
   },
   /* Diagnóstico. La pieza dejó de ser función de `pe` y sólo de `pe`: cuál
      proyecto se muestra depende de CUÁNTAS VUELTAS lleva, y eso es deliberado

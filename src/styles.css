@@ -103,7 +103,44 @@ body{margin:0;background:#BBD3E4;font-family:var(--body);font-weight:400;
    Es el mismo filtro de `#grain` con la frecuencia baja subida —una tarjeta
    chica no puede llevar cumulos del tamano de la pantalla— y va MUY flojo:
    alcanza con que exista. */
-.label,.band .col{
+/* ---------- Etiqueta del proyecto ---------- */
+/* El mismo papel que la etiqueta de especimen —mismo borde, misma sombra
+   corta, mismo grano— en la esquina opuesta: abajo a la derecha, por encima del
+   control de sonido y por debajo de donde termina el riel. Es la unica cartela
+   que vive en el climax, y vive ahi porque ahi el corte y sus rotulos no
+   llegan. Entra desde abajo como las bandas —doce pixeles, no veintiseis: es
+   mas chica— y sale mas rapido de lo que entra. */
+.tag{position:fixed;z-index:6;right:calc(var(--pad) + 30px);bottom:calc(var(--pad) + 34px);
+  width:min(300px,calc(100vw - 2*var(--pad)));margin:0;
+  padding:16px 20px 16px;color:var(--ink);
+  border:1px solid rgba(var(--card-edge),.16);
+  background:rgba(var(--card),.97);
+  box-shadow:0 1px 0 rgba(var(--card-edge),.10),0 10px 30px -14px rgba(10,14,11,.45);
+  opacity:0;transform:translateY(12px);pointer-events:none;
+  transition:opacity .26s ease,transform .26s ease}
+.tag.on{opacity:1;transform:none;pointer-events:auto;
+  transition:opacity .42s cubic-bezier(.2,.7,.2,1),transform .42s cubic-bezier(.2,.7,.2,1)}
+.tag-idx{margin:0;font-family:var(--mono);font-weight:500;font-size:10px;
+  letter-spacing:.2em;color:var(--accent-ink)}
+.tag-name{margin:6px 0 0;font-family:var(--display);font-weight:600;
+  font-size:24px;line-height:1.1;letter-spacing:-.005em}
+.tag-line{margin:8px 0 0;font-family:var(--body);font-size:14px;line-height:1.45;
+  color:var(--ink);opacity:.82}
+.tag-go{margin:6px 0 0;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.tag .go{margin-top:8px;padding:11px 20px;font-size:10px}
+.tag-src{font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink);text-decoration:none;
+  border-bottom:1px solid currentColor;padding-bottom:2px;opacity:.7;transition:opacity .3s;
+  margin-top:8px}
+.tag-src:hover{opacity:1}
+/* La fruta siguiente pesa menos que los enlaces: es una salida lateral, no el
+   destino. Mismo registro que "Enter in silence" en la puerta. */
+.tag-next{display:block;margin:14px 0 0;background:none;border:0;cursor:pointer;padding:0;
+  font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-ink);opacity:.85;transition:opacity .3s}
+.tag-next:hover{opacity:1}
+
+.label,.band .col,.tag{
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='p' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch' result='f'/><feTurbulence type='fractalNoise' baseFrequency='.035' numOctaves='2' stitchTiles='stitch' result='c'/><feComposite in='f' in2='c' operator='arithmetic' k1='1' k2='.4' k3='0' k4='0'/></filter><rect width='300' height='300' filter='url(%23p)' opacity='.10'/></svg>");
   background-size:300px 300px;
   background-blend-mode:multiply}
@@ -348,6 +385,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
    siguen diciendo lo mismo. */
 @media (prefers-reduced-motion:reduce){
   .snd i,.hint i,.gate,.hint{animation:none}
+  .tag,.tag.on{transition:none;transform:none}
 }
 
 /* Los blancos de toque.
@@ -423,6 +461,10 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
    que las necesita para mirar que color hay detras de ESTA franja y decidir el
    viraje. Si se mueven aca, se mueven alla. */
 @media (max-width:820px) and (orientation:portrait){
+  /* En vertical la etiqueta del proyecto se estira de margen a margen, por
+     encima del control de sonido: el corte queda en el medio del cuadro y
+     abajo hay lugar de sobra. */
+  .tag{left:var(--pad);right:var(--pad);width:auto;bottom:calc(var(--pad) + 44px)}
   /* La portada tambien baja. Estaba anclada arriba —`.band.hero` pide
      `align-content:start`— porque el centro del cuadro era de la semilla; en
      esta composicion el centro del cuadro ES el dibujo entero, asi que la
@@ -494,6 +536,19 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
      alinear arriba y a scrollear por si sola, por si aun asi no entra: una
      tapa recortada es peor que una tapa que se desplaza. */
   .gate{place-items:start center;overflow:auto;padding:var(--pad) 0}
+  /* Y la etiqueta del proyecto cambia de forma: en una ventana ancha y baja el
+     corte y sus rotulos ocupan el ancho entero y no queda esquina libre, asi
+     que la cartela se vuelve una TIRA en el borde de abajo —indice, nombre,
+     enlaces, la fruta siguiente— y la frase se va: es lo unico que se puede
+     perder sin perder el enlace. Deja libre el rincon del control de sonido. */
+  .tag{left:var(--pad);right:calc(var(--pad) + 44px);width:auto;bottom:calc(var(--pad) + 2px);
+    padding:10px 16px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .tag-idx,.tag-name,.tag-go,.tag-src,.tag .go{margin:0}
+  .tag-name{font-size:18px}
+  .tag-line{display:none}
+  .tag-go{gap:14px}
+  .tag .go{padding:8px 14px}
+  .tag-next{margin:0 0 0 auto}
   .gate-card{padding:18px 26px 16px}
   .gate-name{font-size:30px;margin-top:8px}
   .gate-role{margin-top:6px;font-size:15px}

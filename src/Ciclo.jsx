@@ -7,6 +7,7 @@ import { SpecimenLabel } from './components/SpecimenLabel.jsx'
 import { Brand, Nav, CycleRail } from './components/Chrome.jsx'
 import { TextIndex } from './components/TextIndex.jsx'
 import { Gate, ScrollHint, SoundToggle } from './components/Gate.jsx'
+import { ProjectTag } from './components/ProjectTag.jsx'
 
 /* El primer pintado tiene que salir ya con la etiqueta puesta. Un estado
    inicial vacio se ve: la pieza abre con "day 0 / DISPERSAL" en blanco y el
@@ -22,6 +23,9 @@ const INITIAL_HUD = {
   brandDark: STAGES[0].dark,
   navDark: STAGES[0].dark,
   from: '',
+  /* La etiqueta del proyecto: cual fruta y si esta a la vista. */
+  project: 0,
+  tag: false,
 }
 
 /* ============================================================
@@ -87,6 +91,12 @@ export function Ciclo() {
      tenerlo no cambia nada de lo que se renderiza. */
   const engineRef = useRef(null)
   const goHome = useCallback(() => { engineRef.current?.home() }, [])
+  /* Y la segunda: la fruta siguiente, desde la etiqueta del proyecto. El motor
+     ya sabe cual es la actual; la pagina solo pide "la que sigue". */
+  const nextFruit = useCallback(() => {
+    const e = engineRef.current
+    if (e) e.pick(e.state().fruit + 1)
+  }, [])
 
   useEffect(() => {
     /* Las referencias de los hijos ya estan puestas cuando corre este efecto:
@@ -142,6 +152,8 @@ export function Ciclo() {
       {hintUp && (
         <ScrollHint scheme={scheme} onDone={() => setHinting(false)} />
       )}
+
+      <ProjectTag project={hud.project} on={phase === 'in' && hud.tag} onNext={nextFruit} />
 
       <SpecimenLabel
         labelRef={labelRef}
