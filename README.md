@@ -80,6 +80,18 @@ o actualizar viento; la disposición es idempotente y libera también las instan
 `tests/test-lab-renderer.mjs` verifica buffers, anclas, límites, rebobinado y recursos
 en Node sin WebGL; no demuestra apariencia ni sustituye la futura revisión visual.
 
+`sampleGrowthCamera(renderer.bounds, p, aspect, fov = GROWTH_CAMERA_FOV)` en
+`src/lab/camera-timeline.js` prepara una cámara pura **sin conectar al visor**:
+retorna `position`/`target` XYZ nuevos, `fov` (42° por defecto), `near` (0.005) y
+`far`. Usa sólo los límites actuales del renderer: raíces, semilla y copa con
+margen conservador de viento, **sin suelo ni caja adulta fija**. Centra esa caja
+y ajusta los ocho vértices en perspectiva, incluida su profundidad; limita la
+proyección a ±0.78 del canvas (22% libre por dimensión). El azimut varía suavemente,
+sin saltos por etapa ni estado acumulado. Cajas inválidas usan una semilla pequeña;
+extensiones degeneradas tienen mínimo 0.25. `tests/test-lab-camera.mjs` verifica
+encuadre, planos de corte, continuidad y búsquedas reversibles en Node sin WebGL.
+El timeline adulto existente sigue intacto; integración y revisión visual pendientes.
+
 ## Qué se movió y qué no
 
 React se quedó con **la página**. El motor se quedó con **el píxel**.
