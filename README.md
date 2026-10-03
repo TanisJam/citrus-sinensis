@@ -65,6 +65,21 @@ base/punta, anclas/direcciones/escalas foliares, reserva/cáscara y límites de 
 `tests/test-lab-growth.mjs` cubre conexiones, crecimiento local y rebobinado exacto;
 la integración visual y su validación en navegador siguen pendientes.
 
+`src/lab/growth-renderer.js` es el adaptador Three independiente, aún **sin conectar
+al visor**. `createGrowthRenderer(topology)` entrega `group`, `bounds`,
+`updateGrowth(sample)`, `updateWind(time, enabled)` y `dispose()`. Sus mallas originales
+incluyen reserva y cáscara partida, tubos rectos de ocho lados que respetan los
+extremos/radios y uniones del modelo, y 300 hojas cítricas puntiagudas con pecíolo y
+nervio en una sola malla instanciada; no usa GLB, vendor ni derivados de assets.
+El plano de suelo translúcido en Y=0 es un corte **educativo**, no terreno real:
+no escribe profundidad y deja ver las raíces. El viento opcional sólo rota hojas
+sobre su pecíolo fijo; apagarlo restaura exactamente la pose estática. `bounds`
+cubre el árbol incluso con viento, no el plano de suelo de nueve unidades.
+Geometrías, materiales y buffers se crean una vez y se reutilizan al buscar edades
+o actualizar viento; la disposición es idempotente y libera también las instancias.
+`tests/test-lab-renderer.mjs` verifica buffers, anclas, límites, rebobinado y recursos
+en Node sin WebGL; no demuestra apariencia ni sustituye la futura revisión visual.
+
 ## Qué se movió y qué no
 
 React se quedó con **la página**. El motor se quedó con **el píxel**.
