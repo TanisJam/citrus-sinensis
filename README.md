@@ -51,6 +51,20 @@ traslación/escala y encuadre completo en retrato. Las fracciones anatómicas
 son dirección artística de esta zelkova, no simulación biológica. Estas pruebas
 no demuestran apariencia: encuadres e interacción WebGL se verifican en navegador.
 
+`src/lab/growth-model.js` prepara el próximo renderer sin modificar este visor.
+Es una ilustración espacial determinista, no científica: topología original
+(94 segmentos de raíz/madera y 300 hojas), sin assets derivados, Three.js ni
+imports del motor 2D; sólo toma como inspiración la generación sembrada por niveles.
+`createGrowthTopology(seed)` fija conexiones; `createGrowthSample(topology)` crea
+buffers reutilizables y `sampleGrowth(topology, p, out)` los escribe sin integrar
+tiempo ni escalar un adulto. Las fracciones de unión son distancias normalizadas
+sobre el segmento en reposo: ramas y hojas emergen sólo al alcanzarlas su soporte.
+`STAGES` y `stageProgress(id)` comparten seed/roots/sprout/trunk/branches/leaves,
+con anclas 0 y 1. Los buffers incluyen extremos XYZ, extensión/longitud, radios
+base/punta, anclas/direcciones/escalas foliares, reserva/cáscara y límites de cámara.
+`tests/test-lab-growth.mjs` cubre conexiones, crecimiento local y rebobinado exacto;
+la integración visual y su validación en navegador siguen pendientes.
+
 ## Qué se movió y qué no
 
 React se quedó con **la página**. El motor se quedó con **el píxel**.
