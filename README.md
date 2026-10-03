@@ -51,6 +51,14 @@ rewrites, carga tardía tras desmontaje y el timeline de capítulos (anclas,
 límites, monotonía). `tests/test-scroll-restoration.mjs` es la regresión explícita
 en navegador (Vite en 127.0.0.1:5177; `CHROME_PATH` opcional): recarga, historial,
 navegación fresca, primera pose, movimiento reducido y aislamiento de la raíz.
+`pnpm test:browser` (`tests/test-lab-browser.mjs`) levanta su propio Vite y prueba
+en WebGL real, a 1440×900, 390×844 y 390×600: las seis anclas dan seis cuadros
+distintos y rebobinan exactamente; el final de la página es la planta completa;
+el scroll de ida y vuelta repite el mismo cuadro; Explorar congela crecimiento y
+pose ante el scroll, gira y acerca con teclado; volver a Recorrido sigue la página;
+`touch-action` deja el scroll nativo fuera de Explorar; los recursos GPU no cambian
+al crecer; movimiento reducido no anima y los botones cambian la etapa sin
+desplazar; la raíz `/` no carga el laboratorio. Compara hashes, no guarda capturas.
 
 `src/lab/growth-model.js` es una ilustración espacial determinista, no científica: topología original
 (94 segmentos de raíz/madera y 300 hojas), sin assets derivados, Three.js ni

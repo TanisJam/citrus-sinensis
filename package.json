@@ -10,6 +10,7 @@
     "engine": "node scripts/build-engine.mjs",
     "og": "node scripts/build-og.mjs",
     "figures": "node scripts/build-figures.mjs",
+    "test:browser": "node tests/test-lab-browser.mjs",
     "test": "node tests/test-loop-identity.js && node tests/test-carryover.js && node tests/test-sweep.js && node tests/test-branching.js && node tests/test-wind.js && node tests/test-chrome.js && node tests/test-pick.js && node tests/test-route.mjs && node tests/test-lab-growth.mjs && node tests/test-lab-renderer.mjs && node tests/test-lab-camera.mjs"
   },
   "dependencies": {
