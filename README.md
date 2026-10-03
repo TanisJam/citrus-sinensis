@@ -14,45 +14,45 @@ pnpm test      # los cinco tests del motor
 ## Laboratorio 3D (aislado)
 
 Abrí `/lab/tree-3d` o `/lab/tree-3d/` con `pnpm dev`. La raíz conserva el
-ciclo 2D; sólo la ruta del laboratorio carga Three.js **0.185.0**, el runtime y
-el modelo (~8 MB, 43 900 triángulos). Requiere WebGL y conexión inicial.
+ciclo 2D; sólo la ruta del laboratorio carga Three.js **0.185.0**. Requiere WebGL.
 
-Esta etapa es **base del recorrido de cámara**, no la experiencia final de
-semilla a árbol. Usa una **zelkova adulta estática** de referencia, no un cítrico:
-el crecimiento genuino desde semilla sigue pendiente y requiere geometría de
-semilla, raíces, tronco, ramas y hojas; escalar el modelo adulto no lo representa.
-No hay crecimiento, frutos ni exportación. **Recorrido** usa el desplazamiento nativo de la página para
-mover sólo la cámara: Tronco → Copa → Árbol completo, con textos en el DOM y
-visor fijo durante el recorrido. Los botones permiten saltar entre etapas.
-**Explorar** suspende el recorrido desde la vista actual: arrastrá para orbitar
-y usá rueda/pellizco o los botones para zoom. Con foco en el canvas, las flechas
-giran, +/− acercan/alejan y Home restablece la cámara. Redimensionar en Explorar
-conserva la posición y el objetivo; volver a Recorrido retoma el scroll actual.
+Un naranjo **ilustrado** crece de semilla a árbol mientras bajás: Semilla →
+Raíces → Brote → Tronco → Ramas → Hojas, con textos en el DOM y visor fijo.
+Es geometría procedural original (abajo), no una simulación botánica ni un modelo
+adulto escalado; no hay frutos ni exportación. **Recorrido** usa el desplazamiento
+nativo: los seis capítulos están espaciados igual en la página y
+`growthProgress(scroll)` los lleva por tramos lineales a las anclas desiguales de
+`STAGES`, así que cada capítulo empieza exactamente en su etapa y volver hacia
+arriba rebobina. El recorrido se limita al alto real del documento, para que la
+última etapa sea alcanzable. Los botones saltan a `chapterScroll(id)`.
+La cámara se ajusta en cada pose a los límites actuales de la planta
+(`sampleGrowthCamera`): raíces incluidas, suelo excluido.
+**Explorar** congela crecimiento y pose: arrastrá para orbitar (también por
+debajo del suelo, para ver raíces) y usá rueda/pellizco o los botones para zoom.
+Con foco en el canvas, las flechas giran, +/− acercan/alejan y Home vuelve al
+encuadre de la etapa congelada. Redimensionar en Explorar conserva la pose;
+volver a Recorrido retoma el scroll actual.
 
-Con movimiento reducido, el recorrido no mueve automáticamente la cámara:
-los botones eligen encuadres estáticos inmediatos. Activar esa preferencia a
-mitad del recorrido detiene la vista sin saltos. El viento es independiente,
+Con movimiento reducido, el scroll no hace crecer la planta: los botones eligen
+etapas estáticas inmediatas. Activar esa preferencia a mitad del recorrido
+detiene la vista sin saltos. El viento sólo mece hojas, es independiente,
 se puede apagar y empieza apagado con movimiento reducido; activar la
-preferencia también lo apaga. La carga o el fallo se anuncian en el visor.
+preferencia también lo apaga. El fallo de WebGL se anuncia en el visor.
 
-Material generado con [FABOTANIC](https://amix-design.com/tl/fab-botanic/), de
-AMIX｜トミナガハルキ. **El modelo y sus texturas no son MIT**: rigen las
-[condiciones de material 1.0.0](https://amix-design.com/tl/fab-botanic/license/1.0.0.html),
-que permiten integración en obras pero no redistribución/venta como material
-independiente. No se publica como biblioteca de assets. El runtime MIT se
-conserva sin cambios en `src/lab/vendor/VerdantVegetation.js`; sus avisos,
-alcance y licencia de Three.js están en `public/lab-assets/zelkova/`
-(`README.txt`, `SDK-SCOPE.json`, `LICENSES.txt`).
+La zelkova de referencia de la etapa anterior ya **no se carga**. Su runtime MIT
+(`src/lab/vendor/VerdantVegetation.js`) y el material de
+[FABOTANIC](https://amix-design.com/tl/fab-botanic/) en `public/lab-assets/zelkova/`
+(no MIT: [condiciones 1.0.0](https://amix-design.com/tl/fab-botanic/license/1.0.0.html))
+siguen en el repositorio sólo hasta decidir su retiro; `tests/test-route.mjs`
+conserva su contrato.
 
 `pnpm test` incluye `tests/test-route.mjs`: rutas exactas, precedencia de
-rewrites, carga tardía tras desmontaje y contrato de viento/disposición del
-runtime. También prueba el timeline puro: límites, etapas, continuidad,
-traslación/escala y encuadre completo en retrato. Las fracciones anatómicas
-son dirección artística de esta zelkova, no simulación biológica. Estas pruebas
-no demuestran apariencia: encuadres e interacción WebGL se verifican en navegador.
+rewrites, carga tardía tras desmontaje y el timeline de capítulos (anclas,
+límites, monotonía). `tests/test-scroll-restoration.mjs` es la regresión explícita
+en navegador (Vite en 127.0.0.1:5177; `CHROME_PATH` opcional): recarga, historial,
+navegación fresca, primera pose, movimiento reducido y aislamiento de la raíz.
 
-`src/lab/growth-model.js` prepara el próximo renderer sin modificar este visor.
-Es una ilustración espacial determinista, no científica: topología original
+`src/lab/growth-model.js` es una ilustración espacial determinista, no científica: topología original
 (94 segmentos de raíz/madera y 300 hojas), sin assets derivados, Three.js ni
 imports del motor 2D; sólo toma como inspiración la generación sembrada por niveles.
 `createGrowthTopology(seed)` fija conexiones; `createGrowthSample(topology)` crea
@@ -62,11 +62,10 @@ sobre el segmento en reposo: ramas y hojas emergen sólo al alcanzarlas su sopor
 `STAGES` y `stageProgress(id)` comparten seed/roots/sprout/trunk/branches/leaves,
 con anclas 0 y 1. Los buffers incluyen extremos XYZ, extensión/longitud, radios
 base/punta, anclas/direcciones/escalas foliares, reserva/cáscara y límites de cámara.
-`tests/test-lab-growth.mjs` cubre conexiones, crecimiento local y rebobinado exacto;
-la integración visual y su validación en navegador siguen pendientes.
+`tests/test-lab-growth.mjs` cubre conexiones, crecimiento local y rebobinado exacto.
 
-`src/lab/growth-renderer.js` es el adaptador Three independiente, aún **sin conectar
-al visor**. `createGrowthRenderer(topology)` entrega `group`, `bounds`,
+`src/lab/growth-renderer.js` es el adaptador Three que monta `src/lab/scene.js`.
+`createGrowthRenderer(topology)` entrega `group`, `bounds`,
 `updateGrowth(sample)`, `updateWind(time, enabled)` y `dispose()`. Sus mallas originales
 incluyen reserva y cáscara partida, tubos rectos de ocho lados que respetan los
 extremos/radios y uniones del modelo, y 300 hojas cítricas puntiagudas con pecíolo y
@@ -81,7 +80,7 @@ o actualizar viento; la disposición es idempotente y libera también las instan
 en Node sin WebGL; no demuestra apariencia ni sustituye la futura revisión visual.
 
 `sampleGrowthCamera(renderer.bounds, p, aspect, fov = GROWTH_CAMERA_FOV)` en
-`src/lab/camera-timeline.js` prepara una cámara pura **sin conectar al visor**:
+`src/lab/camera-timeline.js` es la cámara pura del recorrido:
 retorna `position`/`target` XYZ nuevos, `fov` (42° por defecto), `near` (0.005) y
 `far`. Usa sólo los límites actuales del renderer: raíces, semilla y copa con
 margen conservador de viento, **sin suelo ni caja adulta fija**. Centra esa caja
@@ -90,7 +89,6 @@ proyección a ±0.78 del canvas (22% libre por dimensión). El azimut varía sua
 sin saltos por etapa ni estado acumulado. Cajas inválidas usan una semilla pequeña;
 extensiones degeneradas tienen mínimo 0.25. `tests/test-lab-camera.mjs` verifica
 encuadre, planos de corte, continuidad y búsquedas reversibles en Node sin WebGL.
-El timeline adulto existente sigue intacto; integración y revisión visual pendientes.
 
 ## Qué se movió y qué no
 

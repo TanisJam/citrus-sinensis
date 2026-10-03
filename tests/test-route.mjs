@@ -109,56 +109,28 @@ departing.fire('pagehide', { persisted: false })
 assert.equal(departing.listeners.size, 0, 'non-BFCache departure removes all handlers')
 console.log('Lab bootstrap geometry / entry isolation / BFCache lifecycle / unavailable history: OK')
 
-const { scrollProgress, sampleCamera, stageProgress } = await import('../src/lab/camera-timeline.js')
+const { scrollProgress, growthProgress, chapterScroll } = await import('../src/lab/camera-timeline.js')
+const { STAGES } = await import('../src/lab/growth-model.js')
 assert.equal(scrollProgress(100, 1000, 400), 0)
 assert.equal(scrollProgress(-300, 1000, 400), 0.5)
 assert.equal(scrollProgress(-900, 1000, 400), 1)
 for (const args of [[NaN, 1000, 400], [0, Infinity, 400], [-10, 400, 400], [-10, 0, 400], [-10, 1000, 0], [-10, 1000, -1]]) {
   assert.equal(scrollProgress(...args), 0, 'invalid or zero travel stays at start')
 }
-const bounds = { min: { x: -3, y: 0, z: -2 }, max: { x: 3, y: 10, z: 2 } }
-const before = structuredClone(bounds)
-const pose = (p, box = bounds, aspect = 1.5) => sampleCamera(p, box, 38, aspect)
-const anchors = [0, 0.5, 1].map(p => pose(p))
-assert.deepEqual(anchors.map(p => p.stage), ['trunk', 'canopy', 'whole'])
-for (const [i, stage] of ['trunk', 'canopy', 'whole'].entries()) {
-  assert.equal(stageProgress(stage), i / 2)
-  assert.deepEqual(pose(stageProgress(stage)), anchors[i], 'manual and scroll anchors agree')
+// Six evenly spaced chapters land exactly on the six uneven growth anchors.
+for (const [i, stage] of STAGES.entries()) {
+  assert.equal(chapterScroll(stage.id), i / (STAGES.length - 1))
+  assert.equal(growthProgress(chapterScroll(stage.id)), stage.progress, 'manual and scroll anchors agree')
 }
-assert.deepEqual(pose(-1), anchors[0])
-assert.deepEqual(pose(2), anchors[2])
-assert.deepEqual(pose(NaN), anchors[0])
-const distance = (a, b) => Math.hypot(...['x', 'y', 'z'].map(k => a[k] - b[k]))
-assert.ok(distance(anchors[0].target, anchors[1].target) > 3, 'details have distinct anatomy targets')
-let previousStage = 0
-for (let i = 0; i <= 100; i++) {
-  const p = i / 100, current = pose(p)
-  assert.deepEqual(current, pose(p), 'deterministic')
-  const stageIndex = ['trunk', 'canopy', 'whole'].indexOf(current.stage)
-  assert.ok(stageIndex >= previousStage, 'stage order never reverses')
-  previousStage = stageIndex
-  for (const point of [current.position, current.target]) assert.ok(Object.values(point).every(Number.isFinite))
-  if (i) assert.ok(distance(current.position, pose(p - 0.01).position) < 1, 'continuous path')
+assert.equal(chapterScroll('unknown'), 0)
+for (const [input, expected] of [[-1, 0], [NaN, 0], [2, 1], [Infinity, 0]]) assert.equal(growthProgress(input), expected)
+let previousGrowth = 0
+for (let i = 1; i <= 1000; i++) {
+  const g = growthProgress(i / 1000)
+  assert.ok(g >= previousGrowth && g - previousGrowth < 0.003, 'monotone and continuous, so scrolling back rewinds')
+  previousGrowth = g
 }
-assert.ok(distance(pose(0.5 - 1e-6).position, pose(0.5 + 1e-6).position) < 1e-4)
-const transformed = Object.fromEntries(Object.entries(bounds).map(([key, point]) => [key,
-  Object.fromEntries(Object.entries(point).map(([axis, value]) => [axis, value * 3 + 7])),
-]))
-for (const p of [0, 0.23, 0.5, 1]) {
-  for (const key of ['position', 'target']) for (const axis of ['x', 'y', 'z']) {
-    assert.ok(Math.abs(pose(p, transformed)[key][axis] - (pose(p)[key][axis] * 3 + 7)) < 1e-9)
-  }
-}
-const portrait = pose(1, bounds, 390 / 600)
-const radius = Math.hypot(6, 10, 4) / 2
-const limiting = Math.atan(Math.tan(38 * Math.PI / 360) * (390 / 600))
-assert.ok(distance(portrait.position, portrait.target) * Math.sin(limiting) >= radius, 'portrait fits whole bounding sphere')
-assert.ok(distance(portrait.position, portrait.target) > distance(anchors[2].position, anchors[2].target))
-for (const [fov, aspect] of [[NaN, NaN], [0, 0], [180, -1]]) {
-  assert.deepEqual(sampleCamera(0.5, bounds, fov, aspect), sampleCamera(0.5, bounds, 38, 1), 'invalid projection uses a finite default')
-}
-assert.deepEqual(bounds, before, 'sampling never mutates bounds')
-console.log('Camera timeline: clamping / anchors / continuity / transforms / portrait fit OK')
+console.log('Chapter timeline: clamping / six stage anchors / monotone continuity OK')
 
 // The loader cannot abort a GLB parse: late arrivals must be disposed, not mounted.
 const { createAssetSlot } = await import('../src/lab/asset-slot.js')

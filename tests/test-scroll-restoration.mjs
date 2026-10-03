@@ -1,11 +1,16 @@
 // Explicit browser regression: start Vite on 127.0.0.1:5177 before running.
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import puppeteer from 'puppeteer-core'
 
 const origin = 'http://127.0.0.1:5177'
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 const browser = await puppeteer.launch({
-  executablePath: '/home/tanisjam/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome',
+  // CHROME_PATH overrides; otherwise the first locally installed Chromium.
+  executablePath: process.env.CHROME_PATH ?? [
+    '/home/tanisjam/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome',
+    '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  ].find(existsSync),
   headless: true,
   args: ['--no-sandbox', '--enable-unsafe-swiftshader'],
 })
@@ -36,14 +41,12 @@ try {
     await page.evaluateOnNewDocument(() => {
       addEventListener('pageshow', event => { window.__persisted = event.persisted })
     })
-    let assetDelay = 0
     const requests = []
     await page.setRequestInterception(true)
     page.on('request', async request => {
       const url = request.url()
       requests.push(url)
       if (url.includes('/src/lab/TreeLab.jsx')) await sleep(delay)
-      if (url.endsWith('/asset.glb')) await sleep(assetDelay)
       // Observe actual first render camera without changing production modules.
       if (url.includes('/src/lab/scene.js')) {
         const response = await fetch(url)
@@ -55,7 +58,8 @@ try {
         await request.respond({ status: 200, contentType: 'application/javascript', body: observed })
       } else await request.continue()
     })
-    await page.goto(`${origin}/`, { waitUntil: 'networkidle0' })
+    await page.goto(`${origin}/`, { waitUntil: 'load' })
+    await sleep(1500)
     check(`root network isolation (${delay})`, requests.some(url => /\/src\/lab\/|\/lab-assets\/|\/three[/.]/.test(url)), false)
     for (const path of ['/lab/tree-3d', '/lab/tree-3d/']) {
       await page.goto(`${origin}${path}`, { waitUntil: 'domcontentloaded' })
@@ -67,27 +71,19 @@ try {
       })
       await sleep(300)
       const before = await state(page)
-      check(`baseline canopy ${path} (${delay})`, before.stage, 'Copa')
-      for (const modelDelay of [0, 1800]) {
-        assetDelay = modelDelay
-        const label = `${path} (import ${delay}ms, model ${modelDelay}ms)`
-        await page.reload({ waitUntil: 'domcontentloaded' })
-        await page.waitForSelector('.tree-lab-narrative')
-        await sleep(100)
-        const layout = await state(page)
-        check(`layout-ready native reload ${label}`, layout.y, before.y)
-        if (modelDelay) {
-          // Prove restoration does not wait for model/GPU readiness.
-          check(`restored before model render ${label}`, layout.first, undefined)
-        }
-        await ready(page)
-        const after = await state(page)
-        check(`native reload ${label}`, after.y, before.y)
-        check(`reload stage ${label}`, after.stage, before.stage)
-        check(`first rendered pose ${label}`, after.first, before.latest)
-        check(`existing history state ${label}`, after.history.existing, 'preserved')
-      }
-      assetDelay = 0
+      check(`baseline roots ${path} (${delay})`, before.stage, 'Raíces')
+      const label = `${path} (import ${delay}ms)`
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.waitForSelector('.tree-lab-narrative')
+      await sleep(100)
+      check(`layout-ready native reload ${label}`, (await state(page)).y, before.y)
+      await ready(page)
+      const after = await state(page)
+      check(`native reload ${label}`, after.y, before.y)
+      check(`reload stage ${label}`, after.stage, before.stage)
+      // Growth and camera are both restored: the first frame is the saved pose.
+      check(`first rendered pose ${label}`, after.first, before.latest)
+      check(`existing history state ${label}`, after.history.existing, 'preserved')
       await page.goBack({ waitUntil: 'domcontentloaded' })
       await page.goForward({ waitUntil: 'domcontentloaded' })
       await ready(page)
@@ -114,7 +110,7 @@ try {
     await ready(page)
     const reduced = await state(page)
     check(`reduced-motion reload scroll (${delay})`, reduced.y, 1162)
-    check(`reduced-motion remains manual (${delay})`, reduced.stage, 'Tronco')
+    check(`reduced-motion remains manual (${delay})`, reduced.stage, 'Semilla')
     await page.close()
   }
   for (const failedModule of ['/src/lab/scroll-restoration.js', '/src/lab/TreeLab.jsx']) {
