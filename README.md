@@ -11,6 +11,46 @@ pnpm og        # regenera la tarjeta social (necesita `pnpm dev` corriendo)
 pnpm test      # los cinco tests del motor
 ```
 
+## Laboratorio 3D (aislado)
+
+Abrí `/lab/tree-3d` o `/lab/tree-3d/` con `pnpm dev`. La raíz conserva el
+ciclo 2D; sólo la ruta del laboratorio carga Three.js **0.185.0**, el runtime y
+el modelo (~8 MB, 43 900 triángulos). Requiere WebGL y conexión inicial.
+
+Esta etapa es **base del recorrido de cámara**, no la experiencia final de
+semilla a árbol. Usa una **zelkova adulta estática** de referencia, no un cítrico:
+el crecimiento genuino desde semilla sigue pendiente y requiere geometría de
+semilla, raíces, tronco, ramas y hojas; escalar el modelo adulto no lo representa.
+No hay crecimiento, frutos ni exportación. **Recorrido** usa el desplazamiento nativo de la página para
+mover sólo la cámara: Tronco → Copa → Árbol completo, con textos en el DOM y
+visor fijo durante el recorrido. Los botones permiten saltar entre etapas.
+**Explorar** suspende el recorrido desde la vista actual: arrastrá para orbitar
+y usá rueda/pellizco o los botones para zoom. Con foco en el canvas, las flechas
+giran, +/− acercan/alejan y Home restablece la cámara. Redimensionar en Explorar
+conserva la posición y el objetivo; volver a Recorrido retoma el scroll actual.
+
+Con movimiento reducido, el recorrido no mueve automáticamente la cámara:
+los botones eligen encuadres estáticos inmediatos. Activar esa preferencia a
+mitad del recorrido detiene la vista sin saltos. El viento es independiente,
+se puede apagar y empieza apagado con movimiento reducido; activar la
+preferencia también lo apaga. La carga o el fallo se anuncian en el visor.
+
+Material generado con [FABOTANIC](https://amix-design.com/tl/fab-botanic/), de
+AMIX｜トミナガハルキ. **El modelo y sus texturas no son MIT**: rigen las
+[condiciones de material 1.0.0](https://amix-design.com/tl/fab-botanic/license/1.0.0.html),
+que permiten integración en obras pero no redistribución/venta como material
+independiente. No se publica como biblioteca de assets. El runtime MIT se
+conserva sin cambios en `src/lab/vendor/VerdantVegetation.js`; sus avisos,
+alcance y licencia de Three.js están en `public/lab-assets/zelkova/`
+(`README.txt`, `SDK-SCOPE.json`, `LICENSES.txt`).
+
+`pnpm test` incluye `tests/test-route.mjs`: rutas exactas, precedencia de
+rewrites, carga tardía tras desmontaje y contrato de viento/disposición del
+runtime. También prueba el timeline puro: límites, etapas, continuidad,
+traslación/escala y encuadre completo en retrato. Las fracciones anatómicas
+son dirección artística de esta zelkova, no simulación biológica. Estas pruebas
+no demuestran apariencia: encuadres e interacción WebGL se verifican en navegador.
+
 ## Qué se movió y qué no
 
 React se quedó con **la página**. El motor se quedó con **el píxel**.
@@ -154,7 +194,9 @@ de `portfolio-v3`, que vive en su propio repo y su propio proyecto de Vercel.
 El proyecto de Vercel apunta a este subdirectorio (**Root Directory =
 `ciclo-react`**); la raíz del repo es taller y no entra en el build.
 
-`vercel.json` tiene **una sola regla**, y la forma importa:
+`vercel.json` conserva el catch-all externo, precedido únicamente por dos
+excepciones exactas (`/lab/tree-3d` y `/lab/tree-3d/`) hacia `/index.html`.
+Las rutas vecinas o anidadas no son excepciones. La forma del catch-all importa:
 
 ```json
 { "source": "/:path+", "destination": "https://<alias>/:path+" }

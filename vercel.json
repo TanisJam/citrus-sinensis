@@ -8,6 +8,8 @@
     }
   ],
   "rewrites": [
+    { "source": "/lab/tree-3d", "destination": "/index.html" },
+    { "source": "/lab/tree-3d/", "destination": "/index.html" },
     {
       "source": "/(.+)",
       "destination": "https://mauricioromero.vercel.app/$1"

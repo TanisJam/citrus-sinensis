@@ -1,0 +1,53 @@
+.tree-lab {
+  --lab-paper: #f4f0e6;
+  --lab-ink: #29382c;
+  --lab-muted: #53604f;
+  --lab-edge: #c8cbbd;
+  box-sizing: border-box;
+  min-height: 100dvh;
+  width: 100%;
+  padding: 28px clamp(18px, 5vw, 72px) 32px;
+  background: var(--lab-paper);
+  color: var(--lab-ink);
+  font: 16px/1.5 Georgia, serif;
+}
+.tree-lab *, .tree-lab *::before, .tree-lab *::after { box-sizing: border-box; }
+.tree-lab a { color: inherit; text-underline-offset: 4px; }
+.tree-lab a:focus-visible, .tree-lab button:focus-visible, #tree-lab-canvas:focus-visible {
+  outline: 3px solid #426139;
+  outline-offset: 4px;
+}
+.tree-lab-header, .tree-lab-controls, .tree-lab-help, .tree-lab-footer, .tree-lab-studio {
+  max-width: 1200px;
+  margin-inline: auto;
+}
+.tree-lab-header > a { display: inline-flex; align-items: center; min-height: 44px; }
+.tree-lab-eyebrow { margin: 20px 0 8px; font: 12px/1.5 ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+.tree-lab h1 { margin: 0 0 12px; font-size: clamp(28px, 4vw, 46px); font-weight: 400; line-height: 1.15; }
+.tree-lab-header > p:last-child { max-width: 65ch; margin: 0 0 24px; color: var(--lab-muted); }
+.tree-lab-studio { border: 1px solid var(--lab-edge); background: var(--lab-paper); }
+#tree-lab-canvas { display: block; width: 100%; height: clamp(100px, calc(100dvh - 330px), 560px); touch-action: auto; }
+.tree-lab-status { padding: 12px 16px; margin: 0; min-height: 48px; border-top: 1px solid var(--lab-edge); font-size: 14px; }
+.tree-lab-controls { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 8px; }
+.tree-lab button { min-height: 44px; padding: 10px 16px; border: 1px solid var(--lab-edge); border-radius: 3px; background: #fcfaf5; color: var(--lab-ink); font: inherit; cursor: pointer; touch-action: manipulation; }
+.tree-lab button:hover:not(:disabled), .tree-lab button[aria-pressed="true"] { background: #e1e7d9; border-color: #6b7f60; }
+.tree-lab button:active:not(:disabled) { background: #cfdac5; }
+.tree-lab button:disabled { opacity: 0.55; cursor: not-allowed; }
+.tree-lab-help { padding-block: 4px 8px; margin-block: 0; color: var(--lab-muted); font-size: 14px; }
+.tree-lab-narrative { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 32px; max-width: 1200px; margin-inline: auto; }
+.tree-lab-sticky { position: sticky; top: 8px; align-self: start; background: var(--lab-paper); z-index: 1; }
+.tree-lab-chapters section { min-height: 90dvh; padding-block: 20px; display: flex; flex-direction: column; }
+.tree-lab-chapters h2 { font-size: clamp(24px, 3vw, 36px); font-weight: 400; margin: 0; }
+.tree-lab-chapters p { max-width: 36ch; }
+@media (max-width: 760px) {
+  .tree-lab-narrative { display: block; }
+  .tree-lab-chapters section { min-height: 75dvh; padding-bottom: 32px; }
+  .tree-lab-chapters section:last-child { min-height: 0; }
+}
+.tree-lab-footer { border-top: 1px solid var(--lab-edge); padding-top: 16px; color: var(--lab-muted); font-size: 14px; overflow-wrap: anywhere; }
+.tree-lab-footer p { margin: 0 0 8px; }
+@media (max-width: 480px) {
+  .tree-lab { padding-top: 16px; }
+  .tree-lab-controls { gap: 8px; }
+  .tree-lab-controls button { padding: 8px 10px; font-size: 14px; }
+}

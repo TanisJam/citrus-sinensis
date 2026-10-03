@@ -1,0 +1,23 @@
+# Botanical 3D preview
+
+## Goal and authorization
+Ultimate goal: citrus grows from seed through roots, sprout, trunk, branches, leaves. Static adult GLB scaling/viewing is not growth. Current completed increment is camera groundwork at /lab/tree-3d (+slash), branch feat/botanical-3d-preview: trunk/canopy/whole stages, native scroll, Explore, reduced-motion manual stages. Original / and engine/audio/styles/assets/vendor/routes preserved; Three.js0.185.0 lazy. Growth remains unimplemented. User now explicitly authorized committing current work and completing the seed-growth interaction. No publishing/push/PR/merge authorized.
+
+## Completed tasks and evidence
+- [x] T1 Adult preview/routing: writer murn1zkf-5-p7vf, route RED/GREEN;8 tests/build/diff pass. Whitelisted model/notices, exact Vercel exceptions.
+- [x] T2 Preview browser: verifier murnbf7y-6-4pym;desktop/mobile/controls/wind/errors/root isolation pass; parent screenshots/diff check.
+- [x] T3 Preview review: review-9be7b1d6bf86e751 approved/acknowledged burned;R3-001 scene.js:48 informational. Never reuse.
+- [x] T4 Camera groundwork: writer murokigs-8-cvi4;pure deterministic timeline RED/GREEN,8 tests/build/diff pass, about430-450 authored delta in bounded lab/tests/README surfaces.
+- [x] T5 Final independent camera verification: verifier murq2yru-b-99i4 passed route tests, durable browser regression, pnpm test/build/diff and32 representative checks. Actual reload1162 preserved normal/1200ms imports, delayed-GLB first-frame,both paths,BFCache,fresh navigation/root isolation/reduced/history/error handling. Desktop/mobile/short native wheel-touch,3 poses,Explore/resize/live reduced passed. Parent git diff --check passed. Own server stopped.
+  - Earlier muroxzwk-9-56og57/58 pass exposed actual reload1162->0 from short lazy placeholder; now corrected. Three old invalid harness assumptions and final float-equality assertion corrected in /tmp, not source failures.
+  - Final screenshots /tmp/t5-final-{1440x900,390x844,390x600}.png. Prior /tmp/camera-scroll-results.json and /tmp/camera-scroll-history.log document RED.
+- [x] T6 Camera review: fresh exact INSPECT scope excluded odd/.codegraph;medium reliability review-0a22fa3354af997a approved and exact acknowledgement returned authority burned. Informational warnings R3-browser-test-portability tests/test-scroll-restoration.mjs:8 and R3-initial-wind scene.js:175-176; separate later work, no correction offered. Earlier ASSESS failures on undeclared untracked treated high, independent verification completed.
+- [x] T7 Reload restoration: writer murpej22-a-w9fm, main.jsx/lab/scroll-restoration.js/route+browser tests only. Actual browser reload RED1162->0 and missing-module unit RED then GREEN. Path/current-history-entry snapshot preserves state, loading geometry plus one-shot fallback if native leaves0 before TreeLab mount; no storage, BFCache-aware cleanup,fresh isolation/history unavailability. Geometry-only attempt failed experimentally. Full tests/build/diff passed and independently rechecked.
+
+## Constraints and remaining work
+Downloaded ZIP /home/tanisjam/Downloads/vd-zelkova-198dfebfdec6ec082494-three-r185.zip:~8MB/43900 triangles;non-MIT assets/MIT scoped SDK. Lazy chunk636.16KB size warning, root292.07KB unchanged. Software WebGL verification; live deployment, physical GPU,cold non-BFCache history traversal,direct runtime target inspection unverified. Full duplicate legacy57-check run skipped after durable regression+32 spot checks. Prior Canvas2D/GPU warnings and aborted /blog/feed.json not established candidate-caused. Preserve untracked .codegraph/;Vite cache incidental.
+
+Delivery strategy auto-chain, selected by user: feature-branch-chain. Integration/tracker branch feat/botanical-3d-preview; first child feat/botanical-3d-base holds the already accumulated verified base, subsequent growth units target their immediate parent. No PR/push/merge authorized. Existing base is oversized because previously accumulated prototype/camera/restoration are one verified snapshot; preserve that honest boundary rather than reconstructing artificial intermediate states. Future units remain bounded with tests/docs. Initial commit pending creation; record identity immediately afterward.
+
+## Authorized growth milestone
+Commit existing verified base, then implement genuine procedural seed/root/sprout/tree growth in the experimental route. Read-only scout murr199f-c-ypm9 is mapping the minimal reversible growth model, renderer, semantic camera and checks before task planning. Adult zelkova anatomy fractions are camera art direction, not growth rules. Do not claim full Citrus 3D goal complete or automatically expand scope to unrelated features.
