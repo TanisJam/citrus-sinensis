@@ -54,7 +54,7 @@ for (let step = 0; step <= 300; step++) {
 const seed = sampleGrowthCamera(at(0), 0, 1.5), adult = sampleGrowthCamera(at(1), 1, 1.5)
 assert.ok(distance(seed.position, seed.target) < 0.15, 'centimetre seed is framed closely')
 assert.ok(distance(adult.position, adult.target) > 100 * distance(seed.position, seed.target), 'camera widens from seed to tree')
-assert.ok(at(1).min.y < -1, 'adult framing includes roots below the soil datum')
+assert.ok(at(1).min.y < -0.9, 'adult framing includes the taproot below the soil datum')
 
 // Every stage anchor is identical whether sought directly or reached by scrolling back.
 const forward = STAGES.map(stage => sampleGrowthCamera(at(stage.progress), stage.progress, 1.5))

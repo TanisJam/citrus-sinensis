@@ -16,10 +16,11 @@ pnpm test      # los cinco tests del motor
 Abrí `/lab/tree-3d` o `/lab/tree-3d/` con `pnpm dev`. La raíz conserva el
 ciclo 2D; sólo la ruta del laboratorio carga Three.js **0.185.0**. Requiere WebGL.
 
-Un naranjo **ilustrado** crece de semilla a árbol mientras bajás: Semilla →
-Raíces → Brote → Tronco → Ramas → Hojas, con textos en el DOM y visor fijo.
-Es geometría procedural original (abajo), no una simulación botánica ni un modelo
-adulto escalado; no hay frutos ni exportación. **Recorrido** usa el desplazamiento
+Un naranjo dulce (*Citrus sinensis*) crece en **escala real (metros)** de semilla
+a árbol de diez años mientras bajás: Semilla → Raíces → Brote → Tronco → Ramas →
+Hojas, con textos en el DOM, la edad en el visor y visor fijo. Es geometría
+procedural original con medidas y tiempos de fuentes botánicas (ver **Fidelidad
+botánica**), no un modelo adulto escalado; no hay flores, frutos ni exportación. **Recorrido** usa el desplazamiento
 nativo: los seis capítulos están espaciados igual en la página y
 `growthProgress(scroll)` los lleva por tramos lineales a las anclas desiguales de
 `STAGES`, así que cada capítulo empieza exactamente en su etapa y volver hacia
@@ -57,43 +58,77 @@ pose ante el scroll, gira y acerca con teclado; volver a Recorrido sigue la pág
 al crecer; movimiento reducido no anima y los botones cambian la etapa sin
 desplazar; la raíz `/` no carga el laboratorio. Compara hashes, no guarda capturas.
 
-`src/lab/growth-model.js` es una ilustración espacial determinista, no científica: topología original
-(94 segmentos de raíz/madera y 300 hojas), sin assets derivados, Three.js ni
-imports del motor 2D; sólo toma como inspiración la generación sembrada por niveles.
-`createGrowthTopology(seed)` fija conexiones; `createGrowthSample(topology)` crea
-buffers reutilizables y `sampleGrowth(topology, p, out)` los escribe sin integrar
-tiempo ni escalar un adulto. Las fracciones de unión son distancias normalizadas
-sobre el segmento en reposo: ramas y hojas emergen sólo al alcanzarlas su soporte.
-`STAGES` y `stageProgress(id)` comparten seed/roots/sprout/trunk/branches/leaves,
-con anclas 0 y 1. Los buffers incluyen extremos XYZ, extensión/longitud, radios
-base/punta, anclas/direcciones/escalas foliares, reserva/cáscara y límites de cámara.
-`tests/test-lab-growth.mjs` cubre conexiones, crecimiento local y rebobinado exacto.
+`src/lab/growth-model.js` es un modelo morfológico determinista en metros (Y arriba,
+suelo en Y=0), sin assets derivados, Three.js ni imports del motor 2D.
+`createGrowthTopology(seed)` fija conexiones (~3.500 segmentos de raíz y madera,
+~17.000 hojas ordenadas por aparición, ~130 espinas); `createGrowthSample(topology)`
+crea buffers reutilizables y `sampleGrowth(topology, p, out)` los escribe sin integrar
+tiempo. Las edades se escriben en días y `progressAtAge`/`ageAtProgress` las mapean
+a `p` en escala log entre las anclas `STAGE_AGES` (0, 10 y 45 días, 1, ~3,5 y 10 años).
+Los ejes crecen por segmentos que se alargan uno tras otro (brotaciones), con
+tropismo y un envolvente de copa (`CROWN`) que corta las ramas en la superficie.
+El grosor sigue el modelo de tubería: la sección de cada tallo es proporcional al
+área foliar (o largo de raíz) que alguna vez sostuvo, así que nunca adelgaza cuando
+caen hojas viejas. Las hojas viven ~900 días y luego caen; por eso el follaje maduro
+queda en la periferia. `tests/test-lab-growth.mjs` cubre conexiones, crecimiento
+local, rebobinado exacto **y los rangos botánicos** de la tabla de abajo.
 
 `src/lab/growth-renderer.js` es el adaptador Three que monta `src/lab/scene.js`.
 `createGrowthRenderer(topology)` entrega `group`, `bounds`,
-`updateGrowth(sample)`, `updateWind(time, enabled)` y `dispose()`. Sus mallas originales
-incluyen reserva y cáscara partida, tubos rectos de ocho lados que respetan los
-extremos/radios y uniones del modelo, y 300 hojas cítricas puntiagudas con pecíolo y
-nervio en una sola malla instanciada; no usa GLB, vendor ni derivados de assets.
-El plano de suelo translúcido en Y=0 es un corte **educativo**, no terreno real:
+`updateGrowth(sample)`, `updateWind(time, enabled)` y `dispose()`. Mallas originales:
+semilla ovoide (cotiledones dentro de la cubierta partida), tubos de ocho lados con
+color por vértice (brote verde → corteza gris verdosa → gris pardo en lo grueso;
+raíz blanca → parda), espinas axilares instanciadas, y hojas instanciadas con pecíolo
+de ala angosta, articulación, lámina elíptico-ovada acuminada de borde apenas crenulado,
+nervio hundido y arco hacia la punta. Cada hoja nace verde claro y se oscurece en
+~2 meses (color por instancia); el envés es más pálido. Sólo se dibujan las hojas ya
+nacidas (`leafCount`). El plano de suelo translúcido en Y=0 es un corte **educativo**:
 no escribe profundidad y deja ver las raíces. El viento opcional sólo rota hojas
-sobre su pecíolo fijo; apagarlo restaura exactamente la pose estática. `bounds`
-cubre el árbol incluso con viento, no el plano de suelo de nueve unidades.
-Geometrías, materiales y buffers se crean una vez y se reutilizan al buscar edades
-o actualizar viento; la disposición es idempotente y libera también las instancias.
-`tests/test-lab-renderer.mjs` verifica buffers, anclas, límites, rebobinado y recursos
-en Node sin WebGL; no demuestra apariencia ni sustituye la futura revisión visual.
+sobre su pecíolo; apagarlo restaura exactamente la pose estática y, sin viento,
+no hay trabajo por cuadro. Geometrías, materiales y buffers se crean una vez; la
+disposición es idempotente. `tests/test-lab-renderer.mjs` verifica tubos, marcos y
+color de hojas, espinas, semilla, rebobinado y recursos en Node sin WebGL.
 
 `sampleGrowthCamera(renderer.bounds, p, aspect, fov = GROWTH_CAMERA_FOV)` en
-`src/lab/camera-timeline.js` es la cámara pura del recorrido:
-retorna `position`/`target` XYZ nuevos, `fov` (42° por defecto), `near` (0.005) y
-`far`. Usa sólo los límites actuales del renderer: raíces, semilla y copa con
-margen conservador de viento, **sin suelo ni caja adulta fija**. Centra esa caja
-y ajusta los ocho vértices en perspectiva, incluida su profundidad; limita la
-proyección a ±0.78 del canvas (22% libre por dimensión). El azimut varía suavemente,
-sin saltos por etapa ni estado acumulado. Cajas inválidas usan una semilla pequeña;
-extensiones degeneradas tienen mínimo 0.25. `tests/test-lab-camera.mjs` verifica
-encuadre, planos de corte, continuidad y búsquedas reversibles en Node sin WebGL.
+`src/lab/camera-timeline.js` es la cámara pura del recorrido: retorna `position`/
+`target` XYZ, `fov` (42°), `near` y `far`. Como la planta pasa de ~1 cm a ~5 m, los
+planos de corte escalan con la distancia (`near` = 2 % de ella) y el encuadre mínimo
+es de 2 cm (`GROWTH_CAMERA_MIN_SPAN`). Ajusta los ocho vértices de la caja actual
+(raíces incluidas, suelo excluido) a ±0.78 del canvas. `tests/test-lab-camera.mjs`
+verifica encuadre, planos de corte, continuidad relativa y búsquedas reversibles.
+
+### Fidelidad botánica
+
+Cada cifra del modelo sale de esta tabla; los tests verifican las marcadas con ✓.
+Las fuentes se consultaron por resúmenes de buscador porque el proxy del entorno
+bloqueó las páginas: **conviene contrastarlas con el texto original**. Lo marcado
+*sin fuente* es conocimiento botánico general o una elección del modelo.
+
+| Rasgo | Modelo | Fuente |
+|---|---|---|
+| Semilla | ovoide 12 × 6,5 × 4,5 mm, crema ✓ | [IJH](https://journal.iahs.org.in/index.php/ijh/article/download/1497/954) (espesor y color *sin fuente*) |
+| Siembra | 1,5 cm de profundidad ✓ | [ABRATES](https://www.abrates.org.br/artigo-cientifico/6635/influence-of-seedcoat-and-sowing-depth-on-seedling-emergence-and-development-of-trifoliata-rootstock) (en trifolio) |
+| Germinación | hipogea: radícula ~día 8, tallo emerge ~día 20–25, cotiledones enterrados ✓ | [Kyushu](https://catalog.lib.kyushu-u.ac.jp/opac_download_md/4564/p049.pdf) |
+| Poliembrionía | 3 plántulas, una domina ✓ | [IntechOpen](https://www.intechopen.com/chapters/82707), [SciELO](https://www.scielo.br/j/sa/a/SGCfZ3LNRMjxp9v6yT8gdJJ/?lang=en) |
+| Plántula | ~40 cm al año ✓, hojas simples desde el inicio | altura *sin fuente para naranjo* ([trifolio](https://horticulturenepal.org/chapter/growth-of-trifoliate-orange-poncirus-trifoliata-l-seedlings-at-different-management-condition-in-ncrp-dhankuta)) |
+| Espinas | una por axila, 0,9–2,1 cm, sólo en tronco y ramas jóvenes ✓ | [UniCT](https://www.iris.unict.it/handle/20.500.11769/720127), [eFlora India](https://efloraofindia.com/efi/citrus/) |
+| Ramificación | 4 ramas principales entre 0,55 y 0,8 m, abiertas y curvadas a 45–60° ✓ | [UC ANR](https://ucanr.edu/media/288794), [CRFG](https://crfg.org/wp-content/uploads/CITRUS-PRUNING-Presentation.pdf) |
+| Filotaxis | espiral alterna, 137,5° | resumen de fuente incierta (3/8–2/5) |
+| Brotación | ~3 por año, brotes de 8–22 cm con 6–10 hojas | [UF/IFAS CREC](https://crec.ifas.ufl.edu/media/crecifasufledu/extension/extension-publications/2008/Newflushandbloomconsiderations.pdf) (largo y hojas por brote *sin fuente*) |
+| Árbol adulto | 4,5–5 m de alto ✓, ~5 m de ancho ✓, copa redondeada | [UF/IFAS ST169](https://edis.ifas.ufl.edu/pdffiles/ST/ST16900.pdf) |
+| Tronco | ~15 cm de diámetro a los 10 años ✓ (modelo de tubería) | [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC9205213/table/tab2) (13–17 cm, edad no confirmada) |
+| Hoja | lámina 7,6–11 cm ✓, pecíolo con ala angosta y articulado, ápice acuminado | [eFlora India](https://efloraofindia.com/efi/citrus/), [USF Plant Atlas](https://dev.demo.plantatlas.usf.edu/genus/318) |
+| Color de hoja | brote verde claro → verde oscuro brillante; envés pálido | [Citrus Australia](https://citrusaustralia.com.au/wp-content/uploads/2023/03/FACT-SHEET_Identifying-citrus-growth-flushes_Sept2022.pdf) |
+| Vida de la hoja | ~2,5 años; follaje maduro en la periferia ✓ | [UC ANR](https://ucanr.edu/node/111611) |
+| Densidad | ~10.000 hojas vivas a los 10 años | estimado desde IAF ~3 ([FSHS](https://journals.flvc.org/fshs/article/view/86106)); conteo por árbol *sin fuente* |
+| Raíces | pivotante ~0,9 m; laterales someras más allá de la copa ✓; ≥80 % de raíces finas en 40 cm ✓ (≈89 % en 25 cm) | [UF/IFAS CG094](https://edis.ifas.ufl.edu/publication/CG094/pdf), [EDIS](https://journals.flvc.org/edis/article/view/130906/138684), [ASHS](https://journals.ashs.org/downloadpdf/view/journals/jashs/100/1/article-p1.pdf) |
+| Corteza | brote liso verde amarillento → gris verdoso; tronco viejo gris pardo | [USPTO PP27144](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/PP27144) (tronco viejo *sin fuente*) |
+
+Simplificaciones conocidas: los brotes jóvenes son tubos redondos (en la planta
+son angulosos); el viento no mueve ramas; no hay flores (un naranjo de semilla tarda
+6–8+ años en florecer) ni frutos; las hojas caen achicándose en el lugar; las
+plántulas hermanas quedan detenidas en vez de morir; la profundidad de raíces
+depende mucho del suelo y del portainjerto (aquí, un suelo profundo y suelto).
 
 ## Qué se movió y qué no
 

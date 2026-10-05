@@ -1,5 +1,7 @@
-// Original lab-only illustration, not a biological simulation or an asset derivative.
-// Y is up; distances are scene units. Topology is rest geometry, never scaled by age.
+// Sweet orange (Citrus sinensis) grown from seed, in metres (Y up, soil at Y=0).
+// Original procedural geometry; proportions and timing follow the sources listed
+// in the README ("Fidelidad botánica"). A morphological model, not a physiological
+// simulation: it fixes where and when organs appear, not why.
 export const STAGES = Object.freeze([
   { id: 'seed', progress: 0 },
   { id: 'roots', progress: 0.1 },
@@ -9,9 +11,48 @@ export const STAGES = Object.freeze([
   { id: 'leaves', progress: 1 },
 ].map(Object.freeze))
 
+// Plant age at each stage anchor, in days: sowing, radicle, emerged seedling,
+// one year, branching juvenile tree, mature ~10-year canopy.
+export const STAGE_AGES = Object.freeze([0, 10, 45, 365, 1300, 3650])
+export const SEED_DEPTH = 0.015
+const GOLDEN = 2.399963 // ~137.5°, spiral (alternate) phyllotaxy
+const DAY = 1 // ages are authored in days and converted to progress below
+// Mature canopy envelope: ~5 m tall and wide, rounded, skirt down to ~0.2 m.
+export const CROWN = Object.freeze({ y: 2.6, radius: 2.5, height: 2.4 })
+
 const clamp = value => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
-const ramp = (p, start, end) => clamp((p - start) / (end - start))
+const ramp = (p, start, end) => end > start ? clamp((p - start) / (end - start)) : p >= end ? 1 : 0
 export const stageProgress = id => STAGES.find(stage => stage.id === id)?.progress ?? 0
+
+// Ages are interpolated in log(1 + days) between anchors: days matter at the
+// seed, years at the canopy, and the scroll stays readable for both.
+export function progressAtAge(days) {
+  const d = Math.max(0, Math.min(STAGE_AGES.at(-1), Number.isFinite(days) ? days : 0))
+  let i = 0
+  while (i < STAGE_AGES.length - 2 && d > STAGE_AGES[i + 1]) i++
+  const a = Math.log1p(STAGE_AGES[i]), b = Math.log1p(STAGE_AGES[i + 1])
+  const t = (Math.log1p(d) - a) / (b - a)
+  return STAGES[i].progress + (STAGES[i + 1].progress - STAGES[i].progress) * t
+}
+export function ageAtProgress(progress) {
+  const p = clamp(progress)
+  let i = 0
+  while (i < STAGES.length - 2 && p > STAGES[i + 1].progress) i++
+  const t = (p - STAGES[i].progress) / (STAGES[i + 1].progress - STAGES[i].progress)
+  return Math.expm1(Math.log1p(STAGE_AGES[i]) + (Math.log1p(STAGE_AGES[i + 1]) - Math.log1p(STAGE_AGES[i])) * t)
+}
+
+const add = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s]
+const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s]
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+const unit = a => { const l = Math.hypot(...a) || 1; return scale(a, 1 / l) }
+function perpendiculars(axis) {
+  const helper = Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]
+  const u = unit(cross(axis, helper))
+  return [u, cross(axis, u)]
+}
+const inCrown = ([x, y, z]) => (x / CROWN.radius) ** 2 + ((y - CROWN.y) / CROWN.height) ** 2 + (z / CROWN.radius) ** 2 <= 1
 
 export function createGrowthTopology(seed = 2026) {
   let state = Number.isFinite(seed) ? seed >>> 0 : 2026
@@ -19,85 +60,262 @@ export function createGrowthTopology(seed = 2026) {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0
     return state / 4294967296
   }
-  const nodes = [], leaves = []
-  function segment(parent, attach, kind, level, delta, radius, start, end) {
+  const between = (a, b) => a + (b - a) * random()
+  const P = days => progressAtAge(days * DAY)
+  const nodes = [], leaves = [], thorns = [], restStart = []
+  const origin = [0, -SEED_DEPTH, 0]
+
+  // attach is the normalized rest distance on the parent; 1 continues an axis.
+  function segment(parent, attach, kind, level, delta, start, end, base) {
     const id = nodes.length
-    const length = Math.hypot(...delta)
-    nodes.push(Object.freeze({ id, parent, attach, kind, level, length,
-      delta: Object.freeze(delta), radius, start, end }))
+    const from = parent < 0 ? base : add(restStart[parent], nodes[parent].delta, attach)
+    restStart.push(from)
+    nodes.push({ id, parent, attach, kind, level, length: Math.hypot(...delta),
+      delta: Object.freeze(delta), start, end: Math.max(end, start + 1e-4), next: -1,
+      // Green shoots turn to bark over about a year.
+      matureAt: P(ageAtProgress(start) + 365),
+      origin: Object.freeze(parent < 0 ? base : [0, 0, 0]) })
+    if (parent >= 0 && attach === 1) nodes[parent].next = id
     return id
   }
-  function foliage(parent, count, start) {
-    const phase = random() * Math.PI * 2
-    for (let j = 0; j < count; j++) {
-      const angle = phase + j * 2.399963 // alternate around each shoot, not in a plane
-      leaves.push(Object.freeze({ id: leaves.length, parent,
-        attach: 0.12 + j * 0.8 / Math.max(1, count - 1),
-        direction: Object.freeze([Math.cos(angle), 0.35, Math.sin(angle)]),
-        size: 0.3 + random() * 0.1, start: start + j * 0.012, end: 0.98 }))
-    }
-  }
-  segment(-1, 0, 'root', 0, [0.06, -2, 0.04], 0.09, 0.02, 0.36)
-  // This single continuous axis is the juvenile sprout AND the mature trunk.
-  const trunk = segment(-1, 0, 'wood', 0, [0.08, 4.4, -0.05], 0.2, 0.17, 0.68)
-  foliage(trunk, 4, 0.22)
-  const rootParents = []
-  for (let j = 0; j < 12; j++) {
-    const angle = j * 2.399963 + random() * 0.25
-    rootParents.push(segment(0, 0.08 + j * 0.065, 'root', 1,
-      [Math.cos(angle) * 0.9, -0.3, Math.sin(angle) * 0.9], 0.035, 0.07 + j * 0.012, 0.48))
-  }
-  for (const parent of rootParents) {
-    for (let j = 0; j < 2; j++) {
+  // A shoot or root axis made of segments that elongate one after another, with
+  // tropism bending the direction and an optional crown envelope cut.
+  function axis({ parent, attach = 1, base, kind, level, direction, lengths, startDay, endDay,
+    tropism = [0, 0, 0], wander = 0, envelope = false }) {
+    const ids = []
+    let dir = unit(direction), at = parent, fraction = attach
+    const total = lengths.reduce((a, b) => a + b, 0)
+    let elapsed = 0
+    for (const length of lengths) {
+      const from = at < 0 ? base : add(restStart[at], nodes[at].delta, fraction)
+      let len = length
+      if (envelope && !inCrown(add(from, dir, len))) {
+        let lo = 0, hi = len
+        for (let k = 0; k < 20; k++) { const mid = (lo + hi) / 2; inCrown(add(from, dir, mid)) ? lo = mid : hi = mid }
+        len = lo
+        if (len < 0.02) break
+      }
+      const s = P(startDay + (endDay - startDay) * elapsed / total)
+      elapsed += length
+      const e = P(startDay + (endDay - startDay) * elapsed / total)
+      const id = segment(at, fraction, kind, level, scale(dir, len), s, e, base)
+      ids.push(id)
+      if (len < length) break
+      at = id; fraction = 1
+      const [u, v] = perpendiculars(dir)
       const angle = random() * Math.PI * 2
-      segment(parent, 0.4 + j * 0.35, 'root', 2,
-        [Math.cos(angle) * 0.32, -0.23, Math.sin(angle) * 0.32], 0.014, 0.2, 0.57)
+      dir = unit(add(add(dir, tropism), add(scale(u, Math.cos(angle)), v, Math.sin(angle)), wander))
+    }
+    return ids
+  }
+  const dayOf = p => ageAtProgress(p)
+  // Leaves sit at nodes along the shoot, alternate in a 137.5° spiral, angled
+  // out from the stem and drooping slightly. Thorns (juvenile) stand in the axil.
+  function foliage(node, count, { lifespan = 900, size = [0.09, 0.13], thorny = false, from = 0.1 } = {}) {
+    const n = nodes[node], axisDir = unit(n.delta), [u, v] = perpendiculars(axisDir)
+    let phase = random() * Math.PI * 2
+    for (let j = 0; j < count; j++) {
+      const attach = from + (1 - from) * (j + 0.5) / count
+      phase += GOLDEN
+      const radial = add(scale(u, Math.cos(phase)), v, Math.sin(phase))
+      const direction = unit(add(add(scale(axisDir, 0.6), radial, 0.8), [0, -0.25, 0]))
+      const start = n.start + (n.end - n.start) * attach + 1e-4
+      const born = dayOf(start)
+      // Leaves reach ~80% size within 1-2 months, then live 2-3 years.
+      const end = P(born + 45)
+      const drop = born + lifespan < STAGE_AGES.at(-1) ? P(born + lifespan) : Infinity
+      leaves.push(Object.freeze({ id: leaves.length, parent: node, attach, direction: Object.freeze(direction),
+        size: between(size[0], size[1]), start, end: Math.max(end, start + 1e-4),
+        drop, dropEnd: drop === Infinity ? Infinity : P(born + lifespan + 30),
+        // Young flush leaves are light green; they darken and harden in ~2 months.
+        matureAt: P(born + 60) }))
+      if (thorny) {
+        thorns.push(Object.freeze({ id: thorns.length, parent: node, attach,
+          direction: Object.freeze(unit(add(axisDir, radial, 0.55))),
+          size: between(0.009, 0.021), start, end: Math.max(P(born + 30), start + 1e-4) }))
+      }
     }
   }
-  // Breadth-first authored tiers; azimuths are actual XYZ geometry, not draw order.
-  // Lower scaffolds reach wider and higher ones climb, giving a citrus dome.
-  let parents = []
+
+  // Polyembryony: sweet orange seeds often hold ~3 embryos (mostly nucellar).
+  // All three germinate; the most vigorous becomes the tree, the others stall.
+  const seedTop = add(origin, [0, 0.006, 0]), seedBottom = add(origin, [0, -0.006, 0])
+  // Radicle first (~day 8), then a taproot that slows to ~0.9 m.
+  const taproot = axis({ parent: -1, base: seedBottom, kind: 'root', level: 0, direction: [0.02, -1, 0.01],
+    lengths: [0.04, 0.06, 0.08, 0.1, 0.12, 0.14, 0.16, 0.2], startDay: 8, endDay: 1800,
+    tropism: [0, -0.2, 0], wander: 0.06 })
+  // Hypogeal germination: the epicotyl emerges ~day 20 while cotyledons stay buried.
+  const heights = [[0.016, 24], [0.035, 36], [0.05, 48], [0.08, 80], [0.13, 130], [0.2, 200], [0.28, 280], [0.35, 365],
+    [0.45, 450], [0.55, 540], [0.65, 620], [0.8, 720], [1, 880], [1.3, 1080], [1.6, 1300], [2, 1700], [2.5, 2150], [3, 2600], [3.5, 2950], [4.1, 3300], [4.7, 3600]]
+  const trunk = []
+  {
+    let at = -1, dir = [0, 1, 0], top = seedTop[1], previousDay = 18
+    for (const [height, day] of heights) {
+      const length = (height - top) / dir[1]
+      const id = segment(at, 1, 'wood', 0, scale(dir, length), P(previousDay), P(day), seedTop)
+      trunk.push(id)
+      // Sympodial flushes: each flush ends and the next starts from a bud, a slight zig-zag.
+      const [u, v] = perpendiculars(dir), angle = random() * Math.PI * 2
+      dir = unit(add(add([0, 1, 0], u, Math.cos(angle) * 0.07), v, Math.sin(angle) * 0.07))
+      top = height; previousDay = day; at = id
+    }
+  }
+  // Juvenile stem: one unifoliate leaf per ~2.5 cm internode, a thorn in each axil.
+  // Seedling leaves start small (~3 cm) and reach adult size within the first years.
+  for (const [i, id] of trunk.slice(1).entries()) {
+    if (i < 13) {
+      const grown = Math.min(1, i / 9)
+      foliage(id, Math.max(1, Math.round(nodes[id].length / (0.018 + 0.012 * grown))),
+        { thorny: true, size: [0.03 + 0.05 * grown, 0.045 + 0.075 * grown] })
+    } else foliage(id, 6)
+  }
+  // The two weaker sibling seedlings: a few centimetres, a few leaves, then they stall.
+  for (const [dx, dz, height, last] of [[0.004, 0.003, 0.06, 120], [-0.003, 0.004, 0.03, 90]]) {
+    const base = add(seedTop, [dx, 0, dz])
+    const ids = axis({ parent: -1, base, kind: 'wood', level: 5, direction: [dx * 12, 1, dz * 12],
+      lengths: [0.016, height * 0.5, height * 0.5], startDay: 22, endDay: last, wander: 0.08 })
+    foliage(ids[1], 2, { size: [0.025, 0.04], lifespan: 400 })
+    axis({ parent: -1, base: add(seedBottom, [dx, 0, dz]), kind: 'root', level: 5, direction: [dx * 20, -1, dz * 20],
+      lengths: [0.02, 0.03], startDay: 12, endDay: last, wander: 0.1 })
+  }
+
+  // Mature root system: shallow laterals (most feeder roots in the top ~25-40 cm)
+  // spreading past the canopy edge (~2.5 m), a few sinkers, fine feeder roots.
+  const lateralRoots = []
   for (let j = 0; j < 8; j++) {
-    const angle = j * 2.399963 + random() * 0.3
-    const reach = 1.35 - j * 0.07
-    const parent = segment(trunk, 0.34 + j * 0.075, 'wood', 1,
-      [Math.cos(angle) * reach, 0.85 + j * 0.08, Math.sin(angle) * reach], 0.085, 0.3 + j * 0.015, 0.77)
-    foliage(parent, 4, 0.41)
-    parents.push(parent)
+    const host = taproot[j % 3]
+    const angle = j * GOLDEN + random() * 0.3
+    const startDay = 40 + j * 70
+    lateralRoots.push(axis({ parent: host, attach: between(0.2, 0.9), kind: 'root', level: 1,
+      direction: [Math.cos(angle), -0.06, Math.sin(angle)], lengths: Array(16).fill(between(0.18, 0.21)),
+      startDay, endDay: 3500, tropism: [0, 0.02, 0], wander: 0.12 }))
   }
-  const secondary = []
-  for (const parent of parents) {
-    for (let j = 0; j < 3; j++) {
-      const angle = Math.atan2(nodes[parent].delta[2], nodes[parent].delta[0]) + (j - 1) * 0.85
-      const child = segment(parent, 0.35 + j * 0.28, 'wood', 2,
-        [Math.cos(angle) * 0.75, 0.6, Math.sin(angle) * 0.75], 0.036, 0.43 + j * 0.025, 0.86)
-      foliage(child, 6, 0.5)
-      secondary.push(child)
+  for (const [k, lateral] of lateralRoots.entries()) {
+    for (const [i, host] of lateral.slice(1).filter((_, i) => i % 2 === 0).entries()) {
+      const d = unit(nodes[host].delta), [u] = perpendiculars(d), side = i % 2 ? 1 : -1
+      const start = dayOf(nodes[host].end) + between(30, 200)
+      if (start > 3400) continue
+      const sub = axis({ parent: host, attach: between(0.3, 0.9), kind: 'root', level: 2,
+        direction: add(add(d, u, side * 1.2), [0, -0.05, 0]), lengths: [0.15, 0.15, 0.12],
+        startDay: start, endDay: Math.min(3600, start + 700), wander: 0.3 })
+      for (const fine of sub) {
+        const fd = unit(nodes[fine].delta), [fu, fv] = perpendiculars(fd), a = random() * Math.PI * 2
+        const fineStart = dayOf(nodes[fine].end) + 20
+        if (fineStart < 3550) {
+          axis({ parent: fine, attach: between(0.3, 1), kind: 'root', level: 3,
+            direction: add(add(fd, fu, Math.cos(a) * 1.5), fv, Math.sin(a) * 1.5), lengths: [between(0.05, 0.1)],
+            startDay: fineStart, endDay: fineStart + 60, wander: 0.2 })
+        }
+      }
+    }
+    // Sinker roots drop from a few laterals about a metre out.
+    if (k % 3 === 0) {
+      const host = lateral[Math.min(6, lateral.length - 1)]
+      const start = dayOf(nodes[host].end) + 100
+      if (start < 3300) {
+        axis({ parent: host, attach: 0.7, kind: 'root', level: 2, direction: [0, -1, 0],
+          lengths: [0.2, 0.2, 0.2], startDay: start, endDay: Math.min(3600, start + 900), wander: 0.1 })
+      }
     }
   }
-  for (const parent of secondary) {
-    const angle = Math.atan2(nodes[parent].delta[2], nodes[parent].delta[0]) + (random() - 0.5)
-    const child = segment(parent, 0.7, 'wood', 3,
-      [Math.cos(angle) * 0.45, 0.4, Math.sin(angle) * 0.45], 0.016, 0.58, 0.92)
-    foliage(child, 5, 0.62)
+
+  // Scaffolds: 3-4 main limbs from ~55-80 cm, leaving at wide angles and curving
+  // up to 45-60°; the leader continues within the rounded crown.
+  const top = heights.findIndex(([height]) => height >= 0.8)
+  const limbs = [trunk.slice(top)]
+  const scaffoldHosts = trunk.filter((_, i) => heights[i][0] > 0.55 && heights[i][0] <= 0.8)
+  for (let j = 0; j < 4; j++) {
+    const host = scaffoldHosts[j % scaffoldHosts.length]
+    const angle = j * (Math.PI / 2) + random() * 0.5
+    const start = dayOf(nodes[host].end) + 20 + j * 30
+    limbs.push(axis({ parent: host, attach: between(0.3, 0.95), kind: 'wood', level: 1,
+      direction: [Math.cos(angle), 0.45, Math.sin(angle)], lengths: [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.55],
+      startDay: start, endDay: 2300, tropism: [0, 0.18, 0], wander: 0.06, envelope: true }))
+    // Vigorous young limbs are leafy and thorny too.
+    limbs.at(-1).slice(0, 3).forEach((id, k) => foliage(id, Math.round(nodes[id].length / 0.03), { thorny: k < 2 }))
   }
-  return Object.freeze({ seed, nodes: Object.freeze(nodes), leaves: Object.freeze(leaves) })
+  // Secondary branches, twigs, then the current flush shoots on the outside.
+  const outward = id => {
+    const p = add(restStart[id], nodes[id].delta, 1)
+    return unit([p[0] + 1e-6, 0, p[2]])
+  }
+  // Secondary branches leave the leader and limbs in every direction, including
+  // outward-down for the low skirt; the crown envelope stops them at the surface,
+  // so twigs and flushes fill the outside of a dense, rounded canopy.
+  const twigs = []
+  const turn = (o, a, rise) => unit([o[0] * Math.cos(a) - o[2] * Math.sin(a), rise, o[0] * Math.sin(a) + o[2] * Math.cos(a)])
+  for (const [l, limb] of limbs.entries()) {
+    for (const [i, host] of limb.slice(l ? 1 : 0).entries()) {
+      for (let k = 0; k < 2; k++) {
+        const start = dayOf(nodes[host].end) + between(20, 100)
+        if (start > 3400) continue
+        const around = l ? between(-1.2, 1.2) : k * Math.PI + between(-1, 1) + i * GOLDEN
+        const low = restStart[host][1] < 1.5
+        const dir = turn(outward(host), around, low ? between(-0.35, 0.4) : between(-0.1, 0.9))
+        const branch = axis({ parent: host, attach: between(0.3, 1), kind: 'wood', level: 2, direction: dir,
+          lengths: [0.35, 0.35, 0.35, 0.35], startDay: start, endDay: Math.min(3550, start + between(300, 500)),
+          tropism: [0, low ? -0.02 : 0.05, 0], wander: 0.12, envelope: true })
+        for (const segmentId of branch) {
+          foliage(segmentId, 3)
+          for (let t = 0; t < 2; t++) {
+            const twigStart = dayOf(nodes[segmentId].end) + between(30, 120)
+            if (twigStart > 3450) continue
+            const twig = axis({ parent: segmentId, attach: between(0.3, 1), kind: 'wood', level: 3,
+              direction: turn(outward(segmentId), between(-1.5, 1.5), between(-0.45, 0.8)),
+              lengths: [0.2, 0.2, 0.2], startDay: twigStart, endDay: Math.min(3600, twigStart + between(120, 240)),
+              wander: 0.15, envelope: true })
+            for (const id of twig) foliage(id, 3)
+            if (twig.length) twigs.push(twig.at(-1))
+          }
+        }
+      }
+    }
+  }
+  // One flush soon after its twig, then the current ones that form the mature
+  // outer leaf layer; older leaves fall, so the interior ends up bare.
+  for (const host of twigs) {
+    for (let f = 0; f < 4; f++) {
+      const ready = dayOf(nodes[host].end) + between(30, 120)
+      const start = f === 0 ? ready : Math.max(ready, between(2900, 3560))
+      if (start > 3590) continue
+      const dir = turn(outward(host), between(-1.5, 1.5), between(-0.3, 0.9))
+      const shoot = axis({ parent: host, attach: between(0.5, 1), kind: 'wood', level: 4, direction: dir,
+        lengths: [between(0.08, 0.22)], startDay: start, endDay: Math.min(3640, start + 30), wander: 0.1, envelope: true })
+      if (shoot.length) foliage(shoot[0], 6 + Math.floor(random() * 5), { from: 0.05 })
+    }
+  }
+  // Ordered by emergence, so a renderer can draw only the prefix already born.
+  const ordered = leaves.sort((a, b) => a.start - b.start).map((leaf, id) => Object.freeze({ ...leaf, id }))
+  return Object.freeze({
+    seed, nodes: Object.freeze(nodes.map(Object.freeze)), leaves: Object.freeze(ordered), thorns: Object.freeze(thorns),
+  })
 }
 
 export function createGrowthSample(topology) {
-  const n = topology.nodes.length, l = topology.leaves.length
+  const n = topology.nodes.length, l = topology.leaves.length, t = topology.thorns.length
   return {
-    progress: 0, stage: 'seed', stageIndex: 0, stageFraction: 0,
+    progress: 0, stage: 'seed', stageIndex: 0, stageFraction: 0, ageDays: 0, leafCount: 0,
     // XYZ triples; growth is normalized rest-length extension; radii are base/tip pairs.
     starts: new Float64Array(n * 3), ends: new Float64Array(n * 3),
     growth: new Float64Array(n), lengths: new Float64Array(n), radii: new Float64Array(n * 2),
-    // Positions are petiole anchors, directions fixed outward axes; scale unfolds there.
+    // 0 = new green tissue, 1 = mature (bark on wood, dark leathery leaves).
+    maturity: new Float64Array(n), load: new Float64Array(n),
     leafPositions: new Float64Array(l * 3), leafDirections: new Float64Array(l * 3),
-    leafScales: new Float64Array(l), seed: new Float64Array(3),
-    seedPosition: new Float64Array([0, 0.04, 0]),
+    leafScales: new Float64Array(l), leafMaturity: new Float64Array(l),
+    thornPositions: new Float64Array(t * 3), thornDirections: new Float64Array(t * 3), thornScales: new Float64Array(t),
+    // Reserve (cotyledon) and seed-coat fractions, and how far the coat has split.
+    seed: new Float64Array(3), seedPosition: new Float64Array([0, -SEED_DEPTH, 0]),
     bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 0, y: 0, z: 0 } },
   }
 }
+
+// Seed: ovoid ~12 x 6.5 x 4.5 mm. Half-extents in metres, Y along the long axis.
+export const SEED_SIZE = Object.freeze([0.00325, 0.006, 0.00225])
+// Pipe-model thickening: cross-section follows the leaf area (or root length) a
+// stem has ever supported, so wood never thins when old leaves drop.
+const WOOD_PIPE = 0.075 ** 2 / 16500 // ~15 cm trunk at maturity
+const ROOT_PIPE = 0.06 ** 2 / 260
+const MIN_WOOD = 0.0012, MIN_ROOT = 0.0005
 
 function include(bounds, x, y, z, radius) {
   bounds.min.x = Math.min(bounds.min.x, x - radius)
@@ -112,52 +330,92 @@ function include(bounds, x, y, z, radius) {
 export function sampleGrowth(topology, progress, out) {
   const p = clamp(progress)
   out.progress = p
+  out.ageDays = ageAtProgress(p)
   let stage = 0
   while (stage < STAGES.length - 1 && p >= STAGES[stage + 1].progress) stage++
   out.stageIndex = stage
   out.stage = STAGES[stage].id
   out.stageFraction = stage === STAGES.length - 1 ? 1 : ramp(p, STAGES[stage].progress, STAGES[stage + 1].progress)
-  // Independent illustrative reserve and shell radii, plus shell opening fraction.
-  out.seed[0] = 0.12 * (1 - ramp(p, 0.08, 0.48))
-  out.seed[1] = 0.15 * (1 - ramp(p, 0.18, 0.58))
-  out.seed[2] = ramp(p, 0.04, 0.24)
-  const radius = Math.max(out.seed[0], out.seed[1])
-  out.bounds.min.x = out.bounds.min.z = -radius
-  out.bounds.max.x = out.bounds.max.z = radius
-  out.bounds.min.y = 0.04 - radius
-  out.bounds.max.y = 0.04 + radius
-  for (const node of topology.nodes) {
+  // The coat splits as the radicle emerges; buried cotyledons feed the seedling
+  // for ~2 months and wither; the empty coat decays within the first year.
+  out.seed[0] = 1 - ramp(p, progressAtAge(20), progressAtAge(120))
+  out.seed[1] = 1 - ramp(p, progressAtAge(90), progressAtAge(365))
+  out.seed[2] = ramp(p, progressAtAge(6), progressAtAge(14))
+  const seedRadius = SEED_SIZE[1] * Math.max(out.seed[0], out.seed[1] * 1.05)
+  out.bounds.min.x = out.bounds.min.z = -seedRadius
+  out.bounds.max.x = out.bounds.max.z = seedRadius
+  out.bounds.min.y = -SEED_DEPTH - seedRadius
+  out.bounds.max.y = -SEED_DEPTH + seedRadius
+  const { nodes, leaves, thorns } = topology
+  for (const node of nodes) {
     const i = node.id, offset = i * 3
     const support = node.parent < 0 ? 1 : out.growth[node.parent]
-    const gate = node.parent < 0 ? 1 : clamp((support - node.attach) / (1 - node.attach))
+    const gate = node.parent < 0 ? 1 : node.attach >= 1 ? (support >= 1 ? 1 : 0)
+      : clamp((support - node.attach) / (1 - node.attach))
     const g = Math.min(ramp(p, node.start, node.end), gate)
     out.growth[i] = g
     out.lengths[i] = node.length * g
-    const base = node.radius * Math.sqrt(g) * (0.3 + 0.7 * ramp(p, node.start, 1))
-    out.radii[i * 2] = base
-    out.radii[i * 2 + 1] = base * 0.35
+    out.maturity[i] = g > 0 ? ramp(p, node.start, node.matureAt) : 0
+    out.load[i] = node.kind === 'root' ? node.length * g : 0
     for (let axis = 0; axis < 3; axis++) {
       // Hidden buds follow the growing parent tip; once visible the rest anchor is fixed.
-      const start = node.parent < 0 ? 0 : out.starts[node.parent * 3 + axis]
-        + topology.nodes[node.parent].delta[axis] * Math.min(support, node.attach)
+      const start = node.parent < 0 ? node.origin[axis] : out.starts[node.parent * 3 + axis]
+        + nodes[node.parent].delta[axis] * Math.min(support, node.attach)
       out.starts[offset + axis] = start
       out.ends[offset + axis] = start + node.delta[axis] * g
     }
-    if (g > 0) {
+  }
+  out.leafCount = 0
+  for (const leaf of leaves) {
+    if (p >= leaf.start) out.leafCount = leaf.id + 1
+    const support = out.growth[leaf.parent], offset = leaf.id * 3
+    const grown = Math.min(ramp(p, leaf.start, leaf.end), clamp((support - leaf.attach) / (1 - leaf.attach)))
+    // Abscission after the leaf's 2-3 year life; its wood keeps the thickening.
+    out.leafScales[leaf.id] = leaf.size * grown * (1 - ramp(p, leaf.drop, leaf.dropEnd))
+    out.leafMaturity[leaf.id] = grown > 0 ? ramp(p, leaf.start, leaf.matureAt) : 0
+    out.load[leaf.parent] += grown * (leaf.size / 0.11) ** 2
+    for (let axis = 0; axis < 3; axis++) {
+      out.leafPositions[offset + axis] = out.starts[leaf.parent * 3 + axis]
+        + nodes[leaf.parent].delta[axis] * Math.min(support, leaf.attach)
+      out.leafDirections[offset + axis] = leaf.direction[axis]
+    }
+  }
+  for (const thorn of thorns) {
+    const support = out.growth[thorn.parent], offset = thorn.id * 3
+    out.thornScales[thorn.id] = thorn.size * Math.min(ramp(p, thorn.start, thorn.end), clamp((support - thorn.attach) / (1 - thorn.attach)))
+    for (let axis = 0; axis < 3; axis++) {
+      out.thornPositions[offset + axis] = out.starts[thorn.parent * 3 + axis]
+        + nodes[thorn.parent].delta[axis] * Math.min(support, thorn.attach)
+      out.thornDirections[offset + axis] = thorn.direction[axis]
+    }
+  }
+  // Children always follow parents, so one reverse pass sums distal load.
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    if (nodes[i].parent >= 0 && nodes[nodes[i].parent].kind === nodes[i].kind) out.load[nodes[i].parent] += out.load[i]
+  }
+  for (const node of nodes) {
+    const i = node.id, g = out.growth[i]
+    const root = node.kind === 'root'
+    out.radii[i * 2] = g > 0 ? Math.max((root ? MIN_ROOT : MIN_WOOD) * Math.min(1, g * 4), Math.sqrt((root ? ROOT_PIPE : WOOD_PIPE) * out.load[i])) : 0
+  }
+  for (const node of nodes) {
+    const i = node.id, base = out.radii[i * 2]
+    // The tip meets the continuing segment, but never thins when that one is newborn.
+    const next = node.next >= 0 ? out.radii[node.next * 2] : 0
+    out.radii[i * 2 + 1] = Math.min(base, Math.max(next, base * 0.4))
+    if (out.growth[i] > 0) {
+      const offset = i * 3
       include(out.bounds, out.starts[offset], out.starts[offset + 1], out.starts[offset + 2], base)
       include(out.bounds, out.ends[offset], out.ends[offset + 1], out.ends[offset + 2], base)
     }
   }
-  for (const leaf of topology.leaves) {
-    const support = out.growth[leaf.parent], offset = leaf.id * 3
-    const scale = leaf.size * Math.min(ramp(p, leaf.start, leaf.end), clamp((support - leaf.attach) / (1 - leaf.attach)))
-    out.leafScales[leaf.id] = scale
-    for (let axis = 0; axis < 3; axis++) {
-      out.leafPositions[offset + axis] = out.starts[leaf.parent * 3 + axis]
-        + topology.nodes[leaf.parent].delta[axis] * Math.min(support, leaf.attach)
-      out.leafDirections[offset + axis] = leaf.direction[axis]
-    }
-    if (scale > 0) include(out.bounds, out.leafPositions[offset], out.leafPositions[offset + 1], out.leafPositions[offset + 2], scale * 1.1)
+  for (const leaf of leaves) {
+    const s = out.leafScales[leaf.id], o = leaf.id * 3
+    if (s > 0) include(out.bounds, out.leafPositions[o], out.leafPositions[o + 1], out.leafPositions[o + 2], s * 1.1)
+  }
+  for (const thorn of thorns) {
+    const s = out.thornScales[thorn.id], o = thorn.id * 3
+    if (s > 0) include(out.bounds, out.thornPositions[o], out.thornPositions[o + 1], out.thornPositions[o + 2], s * 1.1)
   }
   return out
 }

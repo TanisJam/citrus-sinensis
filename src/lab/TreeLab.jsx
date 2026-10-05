@@ -1,19 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { mountTreeScene } from './scene.js'
 import { chapterScroll, growthProgress, scrollProgress } from './camera-timeline.js'
-import { STAGES, stageProgress } from './growth-model.js'
+import { STAGES, ageAtProgress, stageProgress } from './growth-model.js'
 import './lab.css'
 
 const copy = {
-  seed: ['Semilla', 'Una semilla de naranjo bajo la superficie. La reserva alimenta lo que viene; la cáscara todavía está cerrada.'],
-  roots: ['Raíces', 'La radícula sale primero y baja. El suelo es un corte transparente: las raíces quedan a la vista.'],
-  sprout: ['Brote', 'El tallo sube y desdobla sus primeras hojas mientras la reserva de la semilla se agota.'],
-  trunk: ['Tronco', 'El mismo eje del brote engrosa y se alarga. No es un árbol escalado: cada segmento crece desde su punta.'],
-  branches: ['Ramas', 'Las ramas nacen donde el tronco ya llegó, y de ellas otras más finas. Las raíces se abren en la tierra.'],
-  leaves: ['Hojas', 'El follaje completa la copa. Ilustración procedural, no simulación botánica; volvé hacia arriba para rebobinar.'],
+  seed: ['Semilla', 'Semilla de naranjo dulce: ovoide, unos 12 × 6,5 mm, sembrada a 1,5 cm. Suele llevar varios embriones, casi todos clones de la planta madre.'],
+  roots: ['Raíces', 'A los ~10 días la radícula rompe la cubierta y baja. La germinación es hipogea: los cotiledones se quedan enterrados, dentro de la semilla, alimentando la plántula.'],
+  sprout: ['Brote', 'Hacia las 3 semanas asoma el tallo y abre hojas simples. De una misma semilla salen hasta tres plántulas; la más vigorosa domina y las otras se quedan atrás.'],
+  trunk: ['Tronco', 'Al año, unos 40 cm. Es una planta juvenil: cada hoja trae una espina de ~1,5 cm en la axila. Crece por brotaciones, unas tres por año, en leve zigzag.'],
+  branches: ['Ramas', 'Desde los 55–80 cm se abren cuatro ramas principales que salen abiertas y se curvan hacia arriba. El tallo verde se vuelve corteza gris; cada hoja vive 2–3 años.'],
+  leaves: ['Hojas', 'A los ~10 años: 4–5 m de alto, copa redondeada y tronco de ~15 cm. Las hojas, de 7–15 cm con pecíolo alado, quedan en la periferia; las raíces finas, en los primeros 40 cm y más allá de la copa.'],
 }
 const stages = STAGES.map(({ id }) => ({ id, title: copy[id][0], text: copy[id][1] }))
 const stageAt = p => STAGES.findLast(stage => p >= stage.progress).id
+function formatAge(progress) {
+  const days = ageAtProgress(progress)
+  if (days < 1) return 'recién sembrada'
+  if (days < 60) return `${Math.round(days)} ${Math.round(days) === 1 ? 'día' : 'días'}`
+  if (days < 730) return `${Math.round(days / 30.4)} meses`
+  return `${(days / 365).toFixed(1).replace('.', ',').replace(',0', '')} años`
+}
 
 export function TreeLab() {
   const canvas = useRef(null)
@@ -25,6 +32,7 @@ export function TreeLab() {
   const [status, setStatus] = useState('loading')
   const [mode, setMode] = useState('narrative')
   const [stage, setStage] = useState('seed')
+  const [age, setAge] = useState(() => formatAge(0))
   const [reduced, setReduced] = useState(owner.current.reduced)
   const [wind, setWind] = useState(() => !owner.current.reduced)
   useEffect(() => {
@@ -42,6 +50,7 @@ export function TreeLab() {
       owner.current.progress = growthProgress(readProgress())
       viewer.current?.setProgress(owner.current.progress)
       setStage(stageAt(owner.current.progress))
+      setAge(formatAge(owner.current.progress))
     }
     const schedule = () => { if (active && frame === null) frame = requestAnimationFrame(update) }
     measure.current = update
@@ -99,6 +108,7 @@ export function TreeLab() {
       owner.current.progress = progress
       viewer.current?.setProgress(progress)
       setStage(id)
+      setAge(formatAge(progress))
     } else {
       const { top, travel } = scrollTravel()
       // Round up so integer scroll positions never land just short of an anchor.
@@ -121,7 +131,7 @@ export function TreeLab() {
         <a href="/">← Volver al ciclo</a>
         <p className="tree-lab-eyebrow">Laboratorio botánico / 01</p>
         <h1>De semilla a árbol, en tres dimensiones.</h1>
-        <p>Un naranjo ilustrado que crece mientras bajás: semilla, raíces, brote, tronco, ramas y hojas. Geometría procedural original; no es una simulación botánica.</p>
+        <p>Un naranjo dulce (<i>Citrus sinensis</i>) que crece mientras bajás, de la semilla al árbol de diez años, en escala real. Medidas, tiempos y formas siguen fuentes botánicas; es un modelo morfológico, no una simulación fisiológica.</p>
       </header>
       <div className="tree-lab-narrative" ref={narrative}>
         <div className="tree-lab-sticky" ref={sticky}>
@@ -132,6 +142,7 @@ export function TreeLab() {
           </div>
           <section className="tree-lab-studio" aria-label="Visor del espécimen">
             <canvas id="tree-lab-canvas" ref={canvas} tabIndex={explore ? 0 : -1} aria-label="Naranjo en crecimiento, en 3D" aria-describedby="tree-lab-help" />
+            <p className="tree-lab-age" aria-hidden="true">Edad: {age}</p>
             <p className="tree-lab-status" role={status === 'error' ? 'alert' : 'status'}>
               {status === 'loading' && 'Preparando el espécimen…'}
               {ready && 'Espécimen listo · el suelo es un corte transparente'}
@@ -159,7 +170,7 @@ export function TreeLab() {
         </div>
       </div>
       <footer className="tree-lab-footer">
-        <p>Geometría y materiales procedurales originales: 94 segmentos de raíz y madera, 300 hojas. Three.js r185.</p>
+        <p>Geometría procedural original en metros. Fuentes y supuestos en el README del proyecto. Sin flores ni frutos: un naranjo de semilla tarda 6–8 años o más en florecer, y quedan fuera de este recorrido. Three.js r185.</p>
       </footer>
     </main>
   )
