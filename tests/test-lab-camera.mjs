@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { GROWTH_CAMERA_FOV, sampleGrowthCamera } from '../src/lab/camera-timeline.js'
+import { GROWTH_CAMERA_FOV, GROWTH_CAMERA_MIN_SPAN, sampleGrowthCamera } from '../src/lab/camera-timeline.js'
 import { STAGES, createGrowthTopology, createGrowthSample, sampleGrowth } from '../src/lab/growth-model.js'
 
 const axes = ['x', 'y', 'z']
@@ -39,19 +39,21 @@ for (let step = 0; step <= 300; step++) {
     const pose = sampleGrowthCamera(box, p, aspect)
     assertFramed(pose, box, aspect, `p=${p} aspect=${aspect}`)
     assert.equal(pose.fov, 42)
-    assert.equal(pose.near, 0.005)
+    const span = distance(pose.position, pose.target)
+    assert.ok(Math.abs(pose.near - span * 0.02) < 1e-12, 'near plane scales with the fitted distance')
     assert.deepEqual(sampleGrowthCamera(box, p, aspect), pose, 'deterministic, no accumulated state')
   }
   assert.deepEqual(box, before, 'sampling never mutates bounds')
   const pose = sampleGrowthCamera(box, p, 1.5)
   // Bounds only grow by small steps; the camera must follow without stage jumps.
-  if (previous) assert.ok(distance(pose.position, previous.position) < 0.35, `continuous at ${p}`)
+  // Relative steps: the plant spans ~600x in size, so absolute thresholds are meaningless.
+  if (previous) assert.ok(distance(pose.position, previous.position) < 0.12 * distance(previous.position, previous.target), `continuous at ${p}`)
   previous = pose
 }
 // Soil is not in renderer bounds: the seed starts close and the adult is farther.
 const seed = sampleGrowthCamera(at(0), 0, 1.5), adult = sampleGrowthCamera(at(1), 1, 1.5)
-assert.ok(distance(seed.position, seed.target) < 2, 'seed is framed closely')
-assert.ok(distance(adult.position, adult.target) > 4 * distance(seed.position, seed.target), 'camera widens with growth')
+assert.ok(distance(seed.position, seed.target) < 0.15, 'centimetre seed is framed closely')
+assert.ok(distance(adult.position, adult.target) > 100 * distance(seed.position, seed.target), 'camera widens from seed to tree')
 assert.ok(at(1).min.y < -1, 'adult framing includes roots below the soil datum')
 
 // Every stage anchor is identical whether sought directly or reached by scrolling back.
@@ -70,13 +72,14 @@ for (const box of [null, {}, { min: { x: 0, y: 0, z: 0 }, max: { x: NaN, y: 1, z
   { min: { x: 1, y: 0, z: 0 }, max: { x: 0, y: 1, z: 1 } }, { min: { x: -Infinity, y: 0, z: 0 }, max: { x: 0, y: 1, z: 1 } }]) {
   assert.deepEqual(sampleGrowthCamera(box, 0, 1), fallback, 'invalid bounds use the small seed box')
 }
-assertFramed(fallback, { min: { x: -0.15, y: -0.11, z: -0.15 }, max: { x: 0.15, y: 0.19, z: 0.15 } }, 1, 'fallback')
+assertFramed(fallback, { min: { x: -0.01, y: -0.025, z: -0.01 }, max: { x: 0.01, y: -0.005, z: 0.01 } }, 1, 'fallback')
 for (const [fov, aspect] of [[NaN, NaN], [0, 0], [180, -1]]) {
   assert.deepEqual(sampleGrowthCamera(at(0.5), 0.5, aspect, fov), sampleGrowthCamera(at(0.5), 0.5, 1), 'invalid projection uses defaults')
 }
 assert.deepEqual(sampleGrowthCamera(at(1), 2, 1), sampleGrowthCamera(at(1), 1, 1))
 assert.deepEqual(sampleGrowthCamera(at(0), NaN, 1), sampleGrowthCamera(at(0), 0, 1))
 const flat = { min: { x: 0, y: 0, z: 0 }, max: { x: 0, y: 0, z: 0 } }
-assertFramed(sampleGrowthCamera(flat, 0, 1), { min: { x: -0.125, y: -0.125, z: -0.125 }, max: { x: 0.125, y: 0.125, z: 0.125 } }, 1, 'degenerate min span')
+const h = GROWTH_CAMERA_MIN_SPAN / 2
+assertFramed(sampleGrowthCamera(flat, 0, 1), { min: { x: -h, y: -h, z: -h }, max: { x: h, y: h, z: h } }, 1, 'degenerate min span')
 assert.ok(Object.values(sampleGrowthCamera(at(0.5), 0.5, Number.MIN_VALUE).position).every(Number.isFinite), 'overflow falls back')
 console.log('lab growth camera: framing, clip planes, continuity, reversal and guards passed')

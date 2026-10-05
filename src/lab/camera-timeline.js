@@ -23,6 +23,8 @@ export function chapterScroll(stage) {
 }
 
 export const GROWTH_CAMERA_FOV = 42
+export const GROWTH_CAMERA_MIN_SPAN = 0.02
+const NEAR_FRACTION = 0.02
 
 // Pure growth-only fit: bounds are the current plant, including conservative wind
 // padding, never soil or mature-tree bounds. Vectors match the legacy XYZ contract.
@@ -32,10 +34,10 @@ export function sampleGrowthCamera(bounds, progress, aspect, fov = GROWTH_CAMERA
     && bounds.max[k] >= bounds.min[k]
     && Number.isFinite(bounds.max[k] - bounds.min[k]))
   const box = valid ? bounds : {
-    min: { x: -0.15, y: -0.11, z: -0.15 }, max: { x: 0.15, y: 0.19, z: 0.15 },
+    min: { x: -0.01, y: -0.025, z: -0.01 }, max: { x: 0.01, y: -0.005, z: 0.01 },
   }
   const target = Object.fromEntries(axes.map(k => [k, box.min[k] / 2 + box.max[k] / 2]))
-  const half = axes.map(k => Math.max(0.25, box.max[k] - box.min[k]) / 2)
+  const half = axes.map(k => Math.max(GROWTH_CAMERA_MIN_SPAN, box.max[k] - box.min[k]) / 2)
   const p = clamp(progress)
   const azimuth = 0.5 + 0.08 * p * p * (3 - 2 * p)
   const elevation = 0.2
@@ -50,17 +52,21 @@ export function sampleGrowthCamera(bounds, progress, aspect, fov = GROWTH_CAMERA
   const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 1
   const vertical = Math.tan(safeFov * Math.PI / 360) * 0.78
   const horizontal = vertical * safeAspect
-  const near = 0.005
-  let distance = 0, maxDepth = 0
+  // Metres: a ~1 cm seed and a mature tree differ ~600x, so the clip planes
+  // scale with the fitted distance instead of using one fixed near plane.
+  let distance = 0, nearest = 0, maxDepth = 0
   for (let corner = 0; corner < 8; corner++) {
     const offset = half.map((extent, i) => corner & (1 << i) ? extent : -extent)
     const z = dot(offset, backward)
     // Perspective depth is distance-z. Solve both projection inequalities
     // for every corner, rather than using a portrait-hostile bounding sphere.
     distance = Math.max(distance, z + Math.abs(dot(offset, right)) / horizontal,
-      z + Math.abs(dot(offset, up)) / vertical, z + near * 2)
+      z + Math.abs(dot(offset, up)) / vertical)
+    nearest = Math.max(nearest, z)
     maxDepth = Math.max(maxDepth, -z)
   }
+  distance = Math.max(distance, nearest / (1 - NEAR_FRACTION * 2))
+  const near = distance * NEAR_FRACTION
   const position = Object.fromEntries(axes.map((k, i) => [k, target[k] + backward[i] * distance]))
   const far = distance + maxDepth + near * 2
   // Finite inputs can still overflow arithmetic (e.g. a subnormal aspect).
