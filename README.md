@@ -39,12 +39,9 @@ detiene la vista sin saltos. El viento sólo mece hojas, es independiente,
 se puede apagar y empieza apagado con movimiento reducido; activar la
 preferencia también lo apaga. El fallo de WebGL se anuncia en el visor.
 
-La zelkova de referencia de la etapa anterior ya **no se carga**. Su runtime MIT
-(`src/lab/vendor/VerdantVegetation.js`) y el material de
-[FABOTANIC](https://amix-design.com/tl/fab-botanic/) en `public/lab-assets/zelkova/`
-(no MIT: [condiciones 1.0.0](https://amix-design.com/tl/fab-botanic/license/1.0.0.html))
-siguen en el repositorio sólo hasta decidir su retiro; `tests/test-route.mjs`
-conserva su contrato.
+Todo lo que se ve es geometría y materiales originales generados en código: el
+laboratorio no carga modelos, texturas ni runtimes de terceros. La zelkova de
+referencia de la etapa de cámara se retiró del repositorio.
 
 `pnpm test` incluye `tests/test-route.mjs`: rutas exactas, precedencia de
 rewrites, carga tardía tras desmontaje y el timeline de capítulos (anclas,
