@@ -34,12 +34,12 @@ export function createGrowthTopology(seed = 2026) {
       leaves.push(Object.freeze({ id: leaves.length, parent,
         attach: 0.12 + j * 0.8 / Math.max(1, count - 1),
         direction: Object.freeze([Math.cos(angle), 0.35, Math.sin(angle)]),
-        size: 0.16 + random() * 0.06, start: start + j * 0.012, end: 0.98 }))
+        size: 0.3 + random() * 0.1, start: start + j * 0.012, end: 0.98 }))
     }
   }
   segment(-1, 0, 'root', 0, [0.06, -2, 0.04], 0.09, 0.02, 0.36)
   // This single continuous axis is the juvenile sprout AND the mature trunk.
-  const trunk = segment(-1, 0, 'wood', 0, [0.08, 6, -0.05], 0.18, 0.17, 0.68)
+  const trunk = segment(-1, 0, 'wood', 0, [0.08, 4.4, -0.05], 0.2, 0.17, 0.68)
   foliage(trunk, 4, 0.22)
   const rootParents = []
   for (let j = 0; j < 12; j++) {
@@ -55,11 +55,13 @@ export function createGrowthTopology(seed = 2026) {
     }
   }
   // Breadth-first authored tiers; azimuths are actual XYZ geometry, not draw order.
+  // Lower scaffolds reach wider and higher ones climb, giving a citrus dome.
   let parents = []
   for (let j = 0; j < 8; j++) {
     const angle = j * 2.399963 + random() * 0.3
-    const parent = segment(trunk, 0.3 + j * 0.065, 'wood', 1,
-      [Math.cos(angle) * 1.1, 0.65, Math.sin(angle) * 1.1], 0.075, 0.3 + j * 0.015, 0.77)
+    const reach = 1.35 - j * 0.07
+    const parent = segment(trunk, 0.34 + j * 0.075, 'wood', 1,
+      [Math.cos(angle) * reach, 0.85 + j * 0.08, Math.sin(angle) * reach], 0.085, 0.3 + j * 0.015, 0.77)
     foliage(parent, 4, 0.41)
     parents.push(parent)
   }
@@ -68,7 +70,7 @@ export function createGrowthTopology(seed = 2026) {
     for (let j = 0; j < 3; j++) {
       const angle = Math.atan2(nodes[parent].delta[2], nodes[parent].delta[0]) + (j - 1) * 0.85
       const child = segment(parent, 0.35 + j * 0.28, 'wood', 2,
-        [Math.cos(angle) * 0.6, 0.45, Math.sin(angle) * 0.6], 0.032, 0.43 + j * 0.025, 0.86)
+        [Math.cos(angle) * 0.75, 0.6, Math.sin(angle) * 0.75], 0.036, 0.43 + j * 0.025, 0.86)
       foliage(child, 6, 0.5)
       secondary.push(child)
     }
@@ -76,7 +78,7 @@ export function createGrowthTopology(seed = 2026) {
   for (const parent of secondary) {
     const angle = Math.atan2(nodes[parent].delta[2], nodes[parent].delta[0]) + (random() - 0.5)
     const child = segment(parent, 0.7, 'wood', 3,
-      [Math.cos(angle) * 0.35, 0.28, Math.sin(angle) * 0.35], 0.014, 0.58, 0.92)
+      [Math.cos(angle) * 0.45, 0.4, Math.sin(angle) * 0.45], 0.016, 0.58, 0.92)
     foliage(child, 5, 0.62)
   }
   return Object.freeze({ seed, nodes: Object.freeze(nodes), leaves: Object.freeze(leaves) })
