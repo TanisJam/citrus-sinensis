@@ -119,8 +119,10 @@ try {
   const still = await frame(page)
   await page.evaluate(() => scrollBy(0, 1500))
   check('reduced motion: scrolling does not animate growth', [await frame(page), await pressed(page)], [still, 'Semilla'])
+  // Element screenshots may nudge the viewport, so compare around the click itself.
+  const before = await read(page, () => scrollY)
   await click(page, 'Ramas')
-  check('reduced motion: stage buttons change growth in place', [await pressed(page), await read(page, () => scrollY), (await frame(page)) !== still], ['Ramas', 1500, true])
+  check('reduced motion: stage buttons change growth in place', [await pressed(page), await read(page, () => scrollY), (await frame(page)) !== still], ['Ramas', before, true])
   check('reduced motion: no page errors', errors, [])
   await page.close()
 } finally {
