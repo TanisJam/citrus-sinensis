@@ -60,7 +60,7 @@ try {
     })
     await page.goto(`${origin}/`, { waitUntil: 'load' })
     await sleep(1500)
-    check(`root network isolation (${delay})`, requests.some(url => /\/src\/lab\/|\/lab-assets\/|\/three[/.]/.test(url)), false)
+    check(`root network isolation (${delay})`, requests.some(url => /\/src\/lab\/(TreeLab|scene|lab\.css)|\/lab-assets\//.test(url)), false) // the root's own 3D engine shares the growth model, never the lab page
     for (const path of ['/lab/tree-3d', '/lab/tree-3d/']) {
       await page.goto(`${origin}${path}`, { waitUntil: 'domcontentloaded' })
       await ready(page)

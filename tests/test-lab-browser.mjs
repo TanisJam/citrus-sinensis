@@ -59,7 +59,9 @@ try {
   isolated.on('request', request => requests.push(request.url()))
   await isolated.goto(`${origin}/`, { waitUntil: 'load' })
   await new Promise(done => setTimeout(done, 1000))
-  check('root loads no lab or Three.js modules', requests.some(url => /\/src\/lab\/|\/lab-assets\/|\/three[/.]/.test(url)), false)
+  // The root runs its own 3D engine on the shared growth model, but never the
+  // lab page itself.
+  check('root loads no lab page modules', requests.some(url => /\/src\/lab\/(TreeLab|scene|lab\.css)|\/lab-assets\//.test(url)), false)
   await isolated.close()
 
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 390, height: 600 }]) {
