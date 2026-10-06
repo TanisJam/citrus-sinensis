@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
-import { createGrowthTopology, createGrowthSample, sampleGrowth, SEED_SIZE } from '../src/lab/growth-model.js'
+import { CROWN, createGrowthTopology, createGrowthSample, sampleGrowth, SEED_SIZE } from '../src/lab/growth-model.js'
 import { createGrowthRenderer } from '../src/lab/growth-renderer.js'
 
 const topology = createGrowthTopology(2026)
@@ -55,8 +55,13 @@ for (let step = 0; step <= 120; step++) {
   for (const i of probe.filter(i => i < leaves.count)) {
     leaves.getMatrixAt(i, matrix)
     for (let axis = 0; axis < 3; axis++) near(matrix.elements[12 + axis], sample.leafPositions[i * 3 + axis], 'leaf anchor')
-    // Blade faces the sky as far as its direction allows.
-    if (sample.leafScales[i] > 0) assert.ok(matrix.elements[9] >= -1e-9, 'upper side faces up')
+    // The blade's upper side turns toward the light: up and out of the crown.
+    if (sample.leafScales[i] > 0) {
+      const [x, y, z] = sample.leafPositions.slice(i * 3, i * 3 + 3)
+      const light = new THREE.Vector3(x / CROWN.radius, Math.max(0, (y - CROWN.y) / CROWN.height), z / CROWN.radius)
+      light.multiplyScalar(Math.min(1, light.length())).add(new THREE.Vector3(0, 1, 0))
+      assert.ok(new THREE.Vector3(matrix.elements[8], matrix.elements[9], matrix.elements[10]).dot(light) >= -1e-9, 'upper side faces the light')
+    }
     leaves.getColorAt(i, color)
     assert.ok(color.g > color.r && color.g > color.b, 'leaves are green at every age')
   }

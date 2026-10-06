@@ -52,7 +52,8 @@ function perpendiculars(axis) {
   const u = unit(cross(axis, helper))
   return [u, cross(axis, u)]
 }
-const inCrown = ([x, y, z]) => (x / CROWN.radius) ** 2 + ((y - CROWN.y) / CROWN.height) ** 2 + (z / CROWN.radius) ** 2 <= 1
+// Superellipsoid: rounded top, but fuller sides than an ellipsoid, like a citrus skirt.
+export const inCrown = ([x, y, z]) => ((x * x + z * z) / CROWN.radius ** 2) + Math.abs((y - CROWN.y) / CROWN.height) ** 2.6 <= 1
 
 export function createGrowthTopology(seed = 2026) {
   let state = Number.isFinite(seed) ? seed >>> 0 : 2026
@@ -111,14 +112,15 @@ export function createGrowthTopology(seed = 2026) {
   const dayOf = p => ageAtProgress(p)
   // Leaves sit at nodes along the shoot, alternate in a 137.5° spiral, angled
   // out from the stem and drooping slightly. Thorns (juvenile) stand in the axil.
-  function foliage(node, count, { lifespan = 900, size = [0.09, 0.13], thorny = false, from = 0.1 } = {}) {
+  function foliage(node, count, { lifespan = 900, size = [0.11, 0.17], thorny = false, from = 0.1 } = {}) {
     const n = nodes[node], axisDir = unit(n.delta), [u, v] = perpendiculars(axisDir)
     let phase = random() * Math.PI * 2
     for (let j = 0; j < count; j++) {
       const attach = from + (1 - from) * (j + 0.5) / count
       phase += GOLDEN
       const radial = add(scale(u, Math.cos(phase)), v, Math.sin(phase))
-      const direction = unit(add(add(scale(axisDir, 0.6), radial, 0.8), [0, -0.25, 0]))
+      // Leaves point forward along the shoot (~45°), drooping slightly.
+      const direction = unit(add(add(scale(axisDir, 0.8), radial, 0.75), [0, -0.2, 0]))
       const start = n.start + (n.end - n.start) * attach + 1e-4
       const born = dayOf(start)
       // Leaves reach ~80% size within 1-2 months, then live 2-3 years.
@@ -146,7 +148,7 @@ export function createGrowthTopology(seed = 2026) {
     tropism: [0, -0.2, 0], wander: 0.06 })
   // Hypogeal germination: the epicotyl emerges ~day 20 while cotyledons stay buried.
   const heights = [[0.016, 24], [0.035, 36], [0.05, 48], [0.08, 80], [0.13, 130], [0.2, 200], [0.28, 280], [0.35, 365],
-    [0.45, 450], [0.55, 540], [0.65, 620], [0.8, 720], [1, 880], [1.3, 1080], [1.6, 1300], [2, 1700], [2.5, 2150], [3, 2600], [3.5, 2950], [4.1, 3300], [4.7, 3600]]
+    [0.45, 450], [0.55, 540], [0.65, 620], [0.8, 720], [1, 880], [1.3, 1080], [1.6, 1300], [2, 1600], [2.5, 1950], [3, 2300], [3.5, 2650], [3.9, 2950], [4.3, 3200]]
   const trunk = []
   {
     let at = -1, dir = [0, 1, 0], top = seedTop[1], previousDay = 18
@@ -179,34 +181,59 @@ export function createGrowthTopology(seed = 2026) {
       lengths: [0.02, 0.03], startDay: 12, endDay: last, wander: 0.1 })
   }
 
-  // Mature root system: shallow laterals (most feeder roots in the top ~25-40 cm)
-  // spreading past the canopy edge (~2.5 m), a few sinkers, fine feeder roots.
-  const lateralRoots = []
-  for (let j = 0; j < 8; j++) {
-    const host = taproot[j % 3]
-    const angle = j * GOLDEN + random() * 0.3
-    const startDay = 40 + j * 70
-    lateralRoots.push(axis({ parent: host, attach: between(0.2, 0.9), kind: 'root', level: 1,
-      direction: [Math.cos(angle), -0.06, Math.sin(angle)], lengths: Array(16).fill(between(0.18, 0.21)),
-      startDay, endDay: 3500, tropism: [0, 0.02, 0], wander: 0.12 }))
-  }
-  for (const [k, lateral] of lateralRoots.entries()) {
-    for (const [i, host] of lateral.slice(1).filter((_, i) => i % 2 === 0).entries()) {
-      const d = unit(nodes[host].delta), [u] = perpendiculars(d), side = i % 2 ? 1 : -1
-      const start = dayOf(nodes[host].end) + between(30, 200)
-      if (start > 3400) continue
-      const sub = axis({ parent: host, attach: between(0.3, 0.9), kind: 'root', level: 2,
-        direction: add(add(d, u, side * 1.2), [0, -0.05, 0]), lengths: [0.15, 0.15, 0.12],
-        startDay: start, endDay: Math.min(3600, start + 700), wander: 0.3 })
-      for (const fine of sub) {
-        const fd = unit(nodes[fine].delta), [fu, fv] = perpendiculars(fd), a = random() * Math.PI * 2
-        const fineStart = dayOf(nodes[fine].end) + 20
-        if (fineStart < 3550) {
-          axis({ parent: fine, attach: between(0.3, 1), kind: 'root', level: 3,
-            direction: add(add(fd, fu, Math.cos(a) * 1.5), fv, Math.sin(a) * 1.5), lengths: [between(0.05, 0.1)],
-            startDay: fineStart, endDay: fineStart + 60, wander: 0.2 })
+  // A fibrous root system: from the first weeks the taproot carries many short
+  // laterals, branched again, mostly in the top ~30 cm.
+  for (const host of taproot.slice(0, 6)) {
+    const count = Math.round(nodes[host].length / 0.02)
+    for (let j = 0; j < count; j++) {
+      const attach = (j + 0.5) / count, a = random() * Math.PI * 2
+      const born = dayOf(nodes[host].start + (nodes[host].end - nodes[host].start) * attach) + between(4, 20)
+      if (born > 3500) continue
+      const deep = restStart[host][1] + nodes[host].delta[1] * attach
+      const length = between(0.04, 0.14) * (deep > -0.35 ? 1 : 0.5)
+      const lateral = axis({ parent: host, attach, kind: 'root', level: 2,
+        direction: [Math.cos(a), between(-0.5, -0.1), Math.sin(a)], lengths: [length * 0.5, length * 0.5],
+        startDay: born, endDay: born + between(30, 90), wander: 0.35 })
+      for (const id of lateral) {
+        if (random() < 0.6) {
+          const b = random() * Math.PI * 2, fineStart = dayOf(nodes[id].end) + 10
+          axis({ parent: id, attach: between(0.3, 1), kind: 'root', level: 3, direction: [Math.cos(b), between(-0.6, 0.1), Math.sin(b)],
+            lengths: [between(0.02, 0.05)], startDay: fineStart, endDay: fineStart + 30, wander: 0.3 })
         }
       }
+    }
+  }
+  // Mature framework: shallow laterals from the root collar (most feeder roots in
+  // the top ~25-40 cm) spreading past the canopy edge (~2.5 m), a few sinkers.
+  const lateralRoots = []
+  for (let j = 0; j < 14; j++) {
+    const host = taproot[j % 3]
+    const angle = j * GOLDEN + random() * 0.3
+    const startDay = 40 + j * 45
+    lateralRoots.push(axis({ parent: host, attach: between(0.2, 0.9), kind: 'root', level: 1,
+      direction: [Math.cos(angle), -0.06, Math.sin(angle)], lengths: Array(16).fill(between(0.17, 0.21)),
+      startDay, endDay: 3500, tropism: [0, 0.02, 0], wander: 0.14 }))
+  }
+  const fineRoots = (host, count) => {
+    for (let f = 0; f < count; f++) {
+      const fd = unit(nodes[host].delta), [fu, fv] = perpendiculars(fd), a = random() * Math.PI * 2
+      const fineStart = dayOf(nodes[host].end) + between(10, 120)
+      if (fineStart > 3580) continue
+      axis({ parent: host, attach: between(0.2, 1), kind: 'root', level: 3,
+        direction: add(add(add(fd, fu, Math.cos(a) * 1.6), fv, Math.sin(a) * 1.6), [0, -0.3, 0]), lengths: [between(0.04, 0.1)],
+        startDay: fineStart, endDay: fineStart + 45, wander: 0.25 })
+    }
+  }
+  for (const [k, lateral] of lateralRoots.entries()) {
+    for (const [i, host] of lateral.entries()) {
+      fineRoots(host, 1)
+      const d = unit(nodes[host].delta), [u] = perpendiculars(d), side = i % 2 ? 1 : -1
+      const start = dayOf(nodes[host].end) + between(30, 200)
+      if (start > 3400 || !i) continue
+      const sub = axis({ parent: host, attach: between(0.3, 0.9), kind: 'root', level: 2,
+        direction: add(add(d, u, side * 1.2), [0, -0.05, 0]), lengths: [0.14, 0.13, 0.12],
+        startDay: start, endDay: Math.min(3600, start + 600), wander: 0.3 })
+      for (const id of sub) fineRoots(id, 2)
     }
     // Sinker roots drop from a few laterals about a metre out.
     if (k % 3 === 0) {
@@ -242,29 +269,51 @@ export function createGrowthTopology(seed = 2026) {
   // Secondary branches leave the leader and limbs in every direction, including
   // outward-down for the low skirt; the crown envelope stops them at the surface,
   // so twigs and flushes fill the outside of a dense, rounded canopy.
-  const twigs = []
+  // Every shoot tip ends in flushes, including the leader and limbs: no bare tips.
+  const twigs = limbs.map(limb => limb.at(-1))
   const turn = (o, a, rise) => unit([o[0] * Math.cos(a) - o[2] * Math.sin(a), rise, o[0] * Math.sin(a) + o[2] * Math.cos(a)])
-  for (const [l, limb] of limbs.entries()) {
-    for (const [i, host] of limb.slice(l ? 1 : 0).entries()) {
-      for (let k = 0; k < 2; k++) {
+  // Space-colonization-lite: targets spread evenly over the crown surface; each
+  // secondary branch grows from the nearest limb toward one, so no sector of the
+  // canopy is left empty.
+  const hosts = limbs.flatMap((limb, l) => limb.slice(l ? 1 : 0))
+  const uses = new Map()
+  const TARGETS = 96, SKIRT = 24
+  for (let k = 0; k < TARGETS + SKIRT; k++) {
+    // An extra ring of targets keeps the low skirt full, as on an unpruned citrus.
+    const y = k < TARGETS ? 1 - 1.85 * (k + 0.5) / TARGETS : -0.25 - 0.5 * (k - TARGETS + 0.5) / SKIRT
+    const r = Math.sqrt(1 - y * y), a = k * GOLDEN + (k < TARGETS ? 0 : 0.7)
+    const target = [Math.cos(a) * r * CROWN.radius * 0.95, CROWN.y + Math.sign(y) * Math.abs(y) ** (2 / 2.6) * CROWN.height * 0.95, Math.sin(a) * r * CROWN.radius * 0.95]
+    let host = -1, best = Infinity
+    for (const id of hosts) {
+      const p = add(restStart[id], nodes[id].delta, 0.7)
+      const d = Math.hypot(...add(target, p, -1)) * (1 + 0.6 * (uses.get(id) ?? 0))
+      if (d < best) { best = d; host = id }
+    }
+    uses.set(host, (uses.get(host) ?? 0) + 1)
+    for (let k2 = 0; k2 < 1; k2++) {
+      {
         const start = dayOf(nodes[host].end) + between(20, 100)
         if (start > 3400) continue
-        const around = l ? between(-1.2, 1.2) : k * Math.PI + between(-1, 1) + i * GOLDEN
-        const low = restStart[host][1] < 1.5
-        const dir = turn(outward(host), around, low ? between(-0.35, 0.4) : between(-0.1, 0.9))
-        const branch = axis({ parent: host, attach: between(0.3, 1), kind: 'wood', level: 2, direction: dir,
-          lengths: [0.35, 0.35, 0.35, 0.35], startDay: start, endDay: Math.min(3550, start + between(300, 500)),
-          tropism: [0, low ? -0.02 : 0.05, 0], wander: 0.12, envelope: true })
+        const from = add(restStart[host], nodes[host].delta, 0.7)
+        const reach = Math.hypot(...add(target, from, -1))
+        const dir = unit(add(target, from, -1))
+        const low = from[1] < 1.5
+        const count = Math.max(1, Math.round(reach / 0.35))
+        const branch = axis({ parent: host, attach: 0.7, kind: 'wood', level: 2, direction: dir,
+          // Vigorous shoots extend roughly 0.6-0.8 m a year.
+          lengths: Array(count).fill(reach / count), startDay: start, endDay: Math.min(3550, start + reach * between(450, 600)),
+          tropism: [0, low ? -0.02 : 0.03, 0], wander: 0.1, envelope: true })
+        if (branch.length) twigs.push(branch.at(-1))
         for (const segmentId of branch) {
-          foliage(segmentId, 3)
-          for (let t = 0; t < 2; t++) {
+          foliage(segmentId, 6)
+          for (let t = 0; t < 1; t++) {
             const twigStart = dayOf(nodes[segmentId].end) + between(30, 120)
             if (twigStart > 3450) continue
             const twig = axis({ parent: segmentId, attach: between(0.3, 1), kind: 'wood', level: 3,
               direction: turn(outward(segmentId), between(-1.5, 1.5), between(-0.45, 0.8)),
-              lengths: [0.2, 0.2, 0.2], startDay: twigStart, endDay: Math.min(3600, twigStart + between(120, 240)),
-              wander: 0.15, envelope: true })
-            for (const id of twig) foliage(id, 3)
+              lengths: [0.12, 0.12, 0.12, 0.12], startDay: twigStart, endDay: Math.min(3600, twigStart + between(120, 240)),
+              wander: 0.28, envelope: true })
+            for (const id of twig) foliage(id, 4)
             if (twig.length) twigs.push(twig.at(-1))
           }
         }
@@ -276,12 +325,13 @@ export function createGrowthTopology(seed = 2026) {
   for (const host of twigs) {
     for (let f = 0; f < 4; f++) {
       const ready = dayOf(nodes[host].end) + between(30, 120)
-      const start = f === 0 ? ready : Math.max(ready, between(2900, 3560))
+      const start = f === 0 ? ready : Math.max(ready, between(2850, 3500))
       if (start > 3590) continue
       const dir = turn(outward(host), between(-1.5, 1.5), between(-0.3, 0.9))
       const shoot = axis({ parent: host, attach: between(0.5, 1), kind: 'wood', level: 4, direction: dir,
-        lengths: [between(0.08, 0.22)], startDay: start, endDay: Math.min(3640, start + 30), wander: 0.1, envelope: true })
-      if (shoot.length) foliage(shoot[0], 6 + Math.floor(random() * 5), { from: 0.05 })
+        lengths: [between(0.12, 0.28)], startDay: start, endDay: Math.min(3640, start + 30), wander: 0.1, envelope: true })
+      // Leaves spread along the flush with ~1.5-3 cm internodes.
+      if (shoot.length) foliage(shoot[0], Math.max(4, Math.round(nodes[shoot[0]].length / 0.02)), { from: 0.1 })
     }
   }
   // Ordered by emergence, so a renderer can draw only the prefix already born.
@@ -313,9 +363,11 @@ export function createGrowthSample(topology) {
 export const SEED_SIZE = Object.freeze([0.00325, 0.006, 0.00225])
 // Pipe-model thickening: cross-section follows the leaf area (or root length) a
 // stem has ever supported, so wood never thins when old leaves drop.
-const WOOD_PIPE = 0.075 ** 2 / 16500 // ~15 cm trunk at maturity
-const ROOT_PIPE = 0.06 ** 2 / 260
-const MIN_WOOD = 0.0012, MIN_ROOT = 0.0005
+const WOOD_PIPE = 0.075 ** 2 / 56000 // ~15 cm trunk at maturity
+const ROOT_PIPE = 0.07 ** 2 / 260 // root collar about as thick as the trunk
+// New tissue is ~1.6 mm (shoots) or ~1 mm (roots) across; a year of secondary
+// growth adds a few millimetres even before leaf area demands it.
+const MIN_WOOD = 0.0008, MIN_ROOT = 0.0005, YEAR_WOOD = 0.0022, YEAR_ROOT = 0.0012
 
 function include(bounds, x, y, z, radius) {
   bounds.min.x = Math.min(bounds.min.x, x - radius)
@@ -365,9 +417,17 @@ export function sampleGrowth(topology, progress, out) {
       out.ends[offset + axis] = start + node.delta[axis] * g
     }
   }
-  out.leafCount = 0
-  for (const leaf of leaves) {
-    if (p >= leaf.start) out.leafCount = leaf.id + 1
+  // Leaves are sorted by emergence: stop at the first unborn one, and clear
+  // whatever a later seek had written beyond it, so any seek order is exact.
+  let born = 0
+  while (born < leaves.length && p >= leaves[born].start) born++
+  for (let i = born; i < out.leafCount; i++) {
+    out.leafScales[i] = out.leafMaturity[i] = 0
+    for (let axis = 0; axis < 3; axis++) out.leafPositions[i * 3 + axis] = out.leafDirections[i * 3 + axis] = 0
+  }
+  out.leafCount = born
+  for (let k = 0; k < born; k++) {
+    const leaf = leaves[k]
     const support = out.growth[leaf.parent], offset = leaf.id * 3
     const grown = Math.min(ramp(p, leaf.start, leaf.end), clamp((support - leaf.attach) / (1 - leaf.attach)))
     // Abscission after the leaf's 2-3 year life; its wood keeps the thickening.
@@ -396,7 +456,8 @@ export function sampleGrowth(topology, progress, out) {
   for (const node of nodes) {
     const i = node.id, g = out.growth[i]
     const root = node.kind === 'root'
-    out.radii[i * 2] = g > 0 ? Math.max((root ? MIN_ROOT : MIN_WOOD) * Math.min(1, g * 4), Math.sqrt((root ? ROOT_PIPE : WOOD_PIPE) * out.load[i])) : 0
+    const juvenile = (root ? MIN_ROOT : MIN_WOOD) * Math.min(1, g * 4) + (root ? YEAR_ROOT : YEAR_WOOD) * out.maturity[i] * (node.level <= 1 ? 1 : 0.4)
+    out.radii[i * 2] = g > 0 ? Math.max(juvenile, Math.sqrt((root ? ROOT_PIPE : WOOD_PIPE) * out.load[i])) : 0
   }
   for (const node of nodes) {
     const i = node.id, base = out.radii[i * 2]

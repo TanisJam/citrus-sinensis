@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { SEED_SIZE, createGrowthSample, sampleGrowth } from './growth-model.js'
+import { CROWN, SEED_SIZE, createGrowthSample, sampleGrowth } from './growth-model.js'
 
 // Original meshes; straight centerlines preserve every authored attachment.
 const SIDES = 8
@@ -49,7 +49,7 @@ function leafGeometry() {
   for (const [t, half] of rows) {
     for (const a of ACROSS) {
       // Halves rise from a sunken midrib; the blade arches down toward the tip.
-      positions.push(a * half, t, 0.3 * Math.abs(a * half) - 0.09 * t * t)
+      positions.push(a * half, t, 0.15 * Math.abs(a * half) - 0.09 * t * t)
     }
   }
   for (let r = 0; r < rows.length - 1; r++) {
@@ -79,7 +79,7 @@ const color = hex => new THREE.Color(hex)
 const SHOOT = color(0x6f9a34), BARK = color(0x858a70), OLD_BARK = color(0x6a6157)
 const ROOT_TIP = color(0xf1e9d2), ROOT_OLD = color(0x8c6c4b)
 // Flush leaves open light green and harden to dark glossy green.
-const LEAF_YOUNG = color(0xa3c75a), LEAF_MATURE = color(0x2c5a24)
+const LEAF_YOUNG = color(0xa3c75a), LEAF_MATURE = color(0x245a20)
 
 export function createGrowthRenderer(topology) {
   const group = new THREE.Group()
@@ -105,7 +105,7 @@ export function createGrowthRenderer(topology) {
   // The underside is paler and matte.
   leafSurface.onBeforeCompile = shader => {
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
-      '#include <color_fragment>\nif (!gl_FrontFacing) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.7, 0.4), 0.45);')
+      '#include <color_fragment>\nif (!gl_FrontFacing) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.55, 0.26), 0.35);')
   }
   const leaves = add('leaves', leafGeometry(), leafSurface, topology.leaves.length)
   const thorns = add('thorns', thornGeometry(), material({ color: 0x7d8a47, roughness: 0.6 }), topology.thorns.length)
@@ -124,7 +124,7 @@ export function createGrowthRenderer(topology) {
   const bounds = new THREE.Box3()
   const start = new THREE.Vector3(), end = new THREE.Vector3(), direction = new THREE.Vector3()
   const radial = new THREE.Vector3(), normal = new THREE.Vector3(), scale = new THREE.Vector3()
-  const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(), face = new THREE.Vector3()
+  const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(), face = new THREE.Vector3(), light = new THREE.Vector3()
   const rotation = new THREE.Quaternion(), matrix = new THREE.Matrix4(), gust = new THREE.Matrix4()
   const tint = new THREE.Color(), bark = new THREE.Color()
   // Copy leaf pose into owned buffers: callers may immediately reuse their sample.
@@ -169,20 +169,25 @@ export function createGrowthRenderer(topology) {
     positions.needsUpdate = normals.needsUpdate = colors.needsUpdate = true
     setBounds(mesh.geometry.boundingBox, mesh.geometry.boundingSphere)
   }
-  // Leaf frame: length along its direction, blade facing the sky as far as it can.
+  // Leaf frame: length along its direction; the blade turns toward the light,
+  // i.e. up and out of the crown, as leaves on a citrus canopy surface do.
   function poseLeaves() {
     for (let i = 0; i < leaves.count; i++) {
       direction.fromArray(directions, i * 3).normalize()
-      side.crossVectors(direction, up)
+      start.fromArray(anchors, i * 3)
+      // Outward only sideways or upward: low and seedling leaves still face the sky.
+      light.set(start.x / CROWN.radius, Math.max(0, (start.y - CROWN.y) / CROWN.height), start.z / CROWN.radius)
+      light.multiplyScalar(Math.min(1, light.length())).add(up)
+      side.crossVectors(direction, light)
       if (side.lengthSq() < 1e-8) side.set(1, 0, 0)
       side.normalize()
       face.crossVectors(side, direction)
-      if (face.y < 0) { side.negate(); face.negate() }
+      if (face.dot(light) < 0) { side.negate(); face.negate() }
       matrix.makeBasis(side, direction, face)
       // Wind flutters the blade about the petiole's hinge axis.
       if (windEnabled) matrix.multiply(gust.makeRotationX(0.14 * Math.sin(windTime * 1.7 + i * 2.399963)))
       matrix.scale(scale.setScalar(scales[i]))
-      matrix.setPosition(start.fromArray(anchors, i * 3))
+      matrix.setPosition(start)
       leaves.setMatrixAt(i, matrix)
     }
     leaves.instanceMatrix.needsUpdate = true

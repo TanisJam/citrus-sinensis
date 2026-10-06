@@ -147,7 +147,7 @@ export function mountTreeScene(canvas, { onReady, onError, windEnabled, mode: in
     controls.maxPolarAngle = Math.PI - 0.15
     controls.enableDamping = false // direct response, including reduced-motion users
     plant = createGrowthRenderer(topology)
-    scene.add(plant.group, new THREE.HemisphereLight('#fff9ec', '#b9ad8c', 2.2))
+    scene.add(plant.group, new THREE.HemisphereLight('#fff9ec', '#a7ad86', 2.2))
     light = new THREE.DirectionalLight('#fff4da', 2.4)
     light.position.set(4, 9, 6)
     scene.add(light)

@@ -60,16 +60,21 @@ desplazar; la raíz `/` no carga el laboratorio. Compara hashes, no guarda captu
 
 `src/lab/growth-model.js` es un modelo morfológico determinista en metros (Y arriba,
 suelo en Y=0), sin assets derivados, Three.js ni imports del motor 2D.
-`createGrowthTopology(seed)` fija conexiones (~3.500 segmentos de raíz y madera,
-~17.000 hojas ordenadas por aparición, ~130 espinas); `createGrowthSample(topology)`
+`createGrowthTopology(seed)` fija conexiones (~7.200 segmentos de raíz y madera,
+~34.000 hojas ordenadas por aparición, ~130 espinas); `createGrowthSample(topology)`
 crea buffers reutilizables y `sampleGrowth(topology, p, out)` los escribe sin integrar
 tiempo. Las edades se escriben en días y `progressAtAge`/`ageAtProgress` las mapean
 a `p` en escala log entre las anclas `STAGE_AGES` (0, 10 y 45 días, 1, ~3,5 y 10 años).
 Los ejes crecen por segmentos que se alargan uno tras otro (brotaciones), con
-tropismo y un envolvente de copa (`CROWN`) que corta las ramas en la superficie.
+tropismo y un envolvente de copa (`CROWN`, superelipsoide de lados llenos) que corta
+las ramas en la superficie. Las ramas secundarias crecen desde la rama principal más
+cercana hacia ~120 puntos repartidos sobre esa superficie (una colonización del
+espacio simplificada), a ~0,6–0,8 m por año, así ningún sector de la copa queda vacío.
 El grosor sigue el modelo de tubería: la sección de cada tallo es proporcional al
-área foliar (o largo de raíz) que alguna vez sostuvo, así que nunca adelgaza cuando
-caen hojas viejas. Las hojas viven ~900 días y luego caen; por eso el follaje maduro
+área foliar (o largo de raíz) que alguna vez sostuvo, con un mínimo que crece con la
+edad del tejido; nunca adelgaza cuando caen hojas viejas. Las raíces son fibrosas:
+raicillas a lo largo de la pivotante desde la plántula, laterales con sublaterales y
+raíces finas, y un cuello de raíz tan grueso como el tronco. Las hojas viven ~900 días y luego caen; por eso el follaje maduro
 queda en la periferia. `tests/test-lab-growth.mjs` cubre conexiones, crecimiento
 local, rebobinado exacto **y los rangos botánicos** de la tabla de abajo.
 
@@ -80,8 +85,10 @@ semilla ovoide (cotiledones dentro de la cubierta partida), tubos de ocho lados 
 color por vértice (brote verde → corteza gris verdosa → gris pardo en lo grueso;
 raíz blanca → parda), espinas axilares instanciadas, y hojas instanciadas con pecíolo
 de ala angosta, articulación, lámina elíptico-ovada acuminada de borde apenas crenulado,
-nervio hundido y arco hacia la punta. Cada hoja nace verde claro y se oscurece en
-~2 meses (color por instancia); el envés es más pálido. Sólo se dibujan las hojas ya
+nervio hundido y arco hacia la punta. Las hojas apuntan hacia adelante sobre el brote
+y orientan la cara hacia la luz: hacia arriba y hacia afuera de la copa, como en la
+superficie de un cítrico. Cada hoja nace verde claro y se oscurece en ~2 meses
+(color por instancia); el envés es más pálido. Sólo se dibujan las hojas ya
 nacidas (`leafCount`). El plano de suelo translúcido en Y=0 es un corte **educativo**:
 no escribe profundidad y deja ver las raíces. El viento opcional sólo rota hojas
 sobre su pecíolo; apagarlo restaura exactamente la pose estática y, sin viento,
@@ -114,17 +121,20 @@ bloqueó las páginas: **conviene contrastarlas con el texto original**. Lo marc
 | Espinas | una por axila, 0,9–2,1 cm, sólo en tronco y ramas jóvenes ✓ | [UniCT](https://www.iris.unict.it/handle/20.500.11769/720127), [eFlora India](https://efloraofindia.com/efi/citrus/) |
 | Ramificación | 4 ramas principales entre 0,55 y 0,8 m, abiertas y curvadas a 45–60° ✓ | [UC ANR](https://ucanr.edu/media/288794), [CRFG](https://crfg.org/wp-content/uploads/CITRUS-PRUNING-Presentation.pdf) |
 | Filotaxis | espiral alterna, 137,5° | resumen de fuente incierta (3/8–2/5) |
-| Brotación | ~3 por año, brotes de 8–22 cm con 6–10 hojas | [UF/IFAS CREC](https://crec.ifas.ufl.edu/media/crecifasufledu/extension/extension-publications/2008/Newflushandbloomconsiderations.pdf) (largo y hojas por brote *sin fuente*) |
+| Brotación | ~3 por año, brotes de 12–28 cm con hojas cada ~2 cm | [UF/IFAS CREC](https://crec.ifas.ufl.edu/media/crecifasufledu/extension/extension-publications/2008/Newflushandbloomconsiderations.pdf) (largo y hojas por brote *sin fuente*) |
 | Árbol adulto | 4,5–5 m de alto ✓, ~5 m de ancho ✓, copa redondeada | [UF/IFAS ST169](https://edis.ifas.ufl.edu/pdffiles/ST/ST16900.pdf) |
 | Tronco | ~15 cm de diámetro a los 10 años ✓ (modelo de tubería) | [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC9205213/table/tab2) (13–17 cm, edad no confirmada) |
-| Hoja | lámina 7,6–11 cm ✓, pecíolo con ala angosta y articulado, ápice acuminado | [eFlora India](https://efloraofindia.com/efi/citrus/), [USF Plant Atlas](https://dev.demo.plantatlas.usf.edu/genus/318) |
+| Hoja | lámina 9,4–14,5 cm ✓, pecíolo con ala angosta y articulado, ápice acuminado | [eFlora India](https://efloraofindia.com/efi/citrus/), [USF Plant Atlas](https://dev.demo.plantatlas.usf.edu/genus/318) |
 | Color de hoja | brote verde claro → verde oscuro brillante; envés pálido | [Citrus Australia](https://citrusaustralia.com.au/wp-content/uploads/2023/03/FACT-SHEET_Identifying-citrus-growth-flushes_Sept2022.pdf) |
 | Vida de la hoja | ~2,5 años; follaje maduro en la periferia ✓ | [UC ANR](https://ucanr.edu/node/111611) |
-| Densidad | ~10.000 hojas vivas a los 10 años | estimado desde IAF ~3 ([FSHS](https://journals.flvc.org/fshs/article/view/86106)); conteo por árbol *sin fuente* |
-| Raíces | pivotante ~0,9 m; laterales someras más allá de la copa ✓; ≥80 % de raíces finas en 40 cm ✓ (≈89 % en 25 cm) | [UF/IFAS CG094](https://edis.ifas.ufl.edu/publication/CG094/pdf), [EDIS](https://journals.flvc.org/edis/article/view/130906/138684), [ASHS](https://journals.ashs.org/downloadpdf/view/journals/jashs/100/1/article-p1.pdf) |
+| Densidad | ~21.000 hojas vivas a los 10 años, en una capa periférica densa | estimado desde IAF ~3 ([FSHS](https://journals.flvc.org/fshs/article/view/86106)); conteo por árbol *sin fuente* |
+| Raíces | sistema fibroso; pivotante ~0,9 m; 14 laterales someras más allá de la copa ✓; ≥80 % de raíces finas en 40 cm ✓ | [UF/IFAS CG094](https://edis.ifas.ufl.edu/publication/CG094/pdf), [EDIS](https://journals.flvc.org/edis/article/view/130906/138684), [ASHS](https://journals.ashs.org/downloadpdf/view/journals/jashs/100/1/article-p1.pdf) |
 | Corteza | brote liso verde amarillento → gris verdoso; tronco viejo gris pardo | [USPTO PP27144](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/PP27144) (tronco viejo *sin fuente*) |
 
-Simplificaciones conocidas: los brotes jóvenes son tubos redondos (en la planta
+Revisión visual: se iteró con capturas de cada etapa, de lejos y de cerca, hasta que
+la copa se leyera como un naranjo (domo denso, verde oscuro, falda baja) y las raíces
+como un sistema fibroso; no se comparó contra fotos de referencia, que el entorno no
+pudo descargar. Simplificaciones conocidas: los brotes jóvenes son tubos redondos (en la planta
 son angulosos); el viento no mueve ramas; no hay flores (un naranjo de semilla tarda
 6–8+ años en florecer) ni frutos; las hojas caen achicándose en el lugar; las
 plántulas hermanas quedan detenidas en vez de morir; la profundidad de raíces
