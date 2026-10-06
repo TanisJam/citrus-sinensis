@@ -102,8 +102,12 @@ export function Ciclo() {
     /* Las referencias de los hijos ya estan puestas cuando corre este efecto:
        React confirma de abajo hacia arriba. Por eso el motor puede recibir los
        nodos de las bandas aca y no hace falta un segundo efecto ni un estado
-       intermedio para esperarlos. */
-    const engine = engineRef.current = createEngine({
+       intermedio para esperarlos.
+
+       El motor es 3D. Three.js llega en un chunk aparte mientras la puerta esta
+       arriba; si el navegador no puede abrir WebGL, la pieza sigue en el motor
+       2D, que tiene el mismo contrato. `?engine=2d` lo fuerza. */
+    const options = {
       canvas: canvasRef.current,
       bands: BANDS.map((b, i) => ({ from: b.from, to: b.to, el: bandEls.current[i] })),
       refs: { flash: flashRef, cycleDot: cycleDotRef, label: labelRef },
@@ -116,9 +120,16 @@ export function Ciclo() {
          entra derecho al grafo de audio. `sig` ya viene siendo el mismo objeto
          en todos los frames —lo reusa el motor— asi que esto no aloca nada. */
       onTick: (p, night, interior, sig) => audioRef.current.tick(p, night, interior, sig),
-    })
+    }
+    let alive = true
+    const start2D = () => { if (alive) engineRef.current = createEngine(options) }
+    if (/[?&]engine=2d\b/.test(location.search)) start2D()
+    else import('./cycle/engine3d.js').then(({ createEngine: create3D }) => {
+      if (!alive) return
+      try { engineRef.current = create3D(options) } catch (error) { console.warn('3D unavailable, using 2D:', error); start2D() }
+    }, start2D)
     const audio = audioRef.current
-    return () => { engine.destroy(); audio.destroy(); engineRef.current = null }
+    return () => { alive = false; engineRef.current?.destroy(); audio.destroy(); engineRef.current = null }
   }, [])
 
   const scheme = hud.dark ? 'on-dark' : 'on-light'
