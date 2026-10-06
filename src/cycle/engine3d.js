@@ -305,6 +305,16 @@ export function createEngine(host) {
     if (pe < 0.25) return undergroundPose(pose)
     if (pe < 0.30) return blend(undergroundPose(tmpA), fit(tmpB, mp), T.smooth((pe - 0.25) / 0.05), pose)
     fit(fitPose, mp)
+    // While the fruit sets and colours, walk up to the crown: the roots drop
+    // out of frame and the oranges read at their real size among the leaves.
+    if (pe >= 0.632) {
+      const k = T.smooth(T.clamp((pe - 0.64) / 0.06))
+      if (k > 0) {
+        tmpB.target.copy(fitPose.target).setY(T.lerp(fitPose.target.y, CROWN.y, k))
+        tmpB.position.subVectors(fitPose.position, fitPose.target).multiplyScalar(1 - 0.48 * k).add(tmpB.target)
+        fitPose.position.copy(tmpB.position); fitPose.target.copy(tmpB.target)
+      }
+    }
     if (pe >= 0.56 && pe < 0.632) {
       const k = T.smooth(T.clamp((pe - 0.56) / 0.025)) * (1 - T.smooth(T.clamp((pe - 0.607) / 0.025)))
       return blend(fitPose, closePose(tmpA, flowerFocus, 0.24), k, pose)
@@ -493,7 +503,7 @@ export function createEngine(host) {
     soilFog.near = span * 0.8; soilFog.far = span * 3
     world.fog = under ? soilFog : skyFog
     // Moonlight keeps the tree legible at night, blue and dim.
-    hemi.intensity = 2.2 * (1 - 0.5 * night); sun.intensity = 2.4 * (1 - 0.45 * night)
+    hemi.intensity = 2.2 * (1 - 0.38 * night); sun.intensity = 2.4 * (1 - 0.3 * night)
     sun.color.copy(SUN).lerp(MOON, night)
     skyUniforms.horizon.value.copy(sky)
     skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night)
