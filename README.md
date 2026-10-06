@@ -1,15 +1,48 @@
 # Citrus × sinensis
 
-El ciclo de un naranjo, de semilla a semilla, en un canvas 2D. Es la puerta de
-entrada de [mnr.ar](https://www.mnr.ar/).
+El ciclo de un naranjo, de semilla a semilla, en 3D. Es la puerta de entrada de
+[mnr.ar](https://www.mnr.ar/).
 
 ```bash
 pnpm install
 pnpm dev
 pnpm build
-pnpm og        # regenera la tarjeta social (necesita `pnpm dev` corriendo)
-pnpm test      # los cinco tests del motor
+pnpm og            # regenera la tarjeta social (necesita `pnpm dev` corriendo)
+pnpm test          # motor 2D, ciclo compartido, modelo botánico, renderer y cámara
+pnpm test:browser  # WebGL real: laboratorio y raíz (levantan su propio Vite)
 ```
+
+## La pieza en 3D
+
+La raíz corre sobre `src/cycle/engine3d.js`, un motor con **el mismo contrato que
+el 2D** (`createEngine(host)` → `home`, `pick`, `state`, `destroy`; avisos `onHud`
+por diferencia, `onAccent`, `onTick(pe, night, interior, sig)`; escrituras de
+bandas, riel y etiqueta). Por eso `Ciclo.jsx`, la puerta, las bandas, el sonido, la
+etiqueta del proyecto y el índice accesible no cambiaron: sólo cambió quién pinta.
+Three.js llega en un chunk aparte mientras la puerta está arriba. Si el navegador no
+abre WebGL, la pieza sigue en el motor 2D (`src/engine/engine.js`), intacto;
+`?engine=2d` lo fuerza. `?at=` y `?hold` funcionan igual en los dos, así que
+`pnpm og` y `pnpm figures` siguen sirviendo.
+
+El tiempo es el mismo para los dos: `src/cycle/timeline.js` copia del motor 2D el
+reparto de scroll, el bucle (0.95–1 = 0–0.05), las señales del sonido, las noches,
+la elección por vuelta y las escrituras del DOM, y `tests/test-cycle-timeline.mjs`
+fija cada tabla contra el texto del motor 2D: si una cambia de un lado, el test se
+rompe. Las trece etapas (Dispersal … Endosperm) se mapean a la edad del modelo
+botánico del laboratorio (`AGE_3D`): la semilla cae, se entierra y se hincha, la
+radícula baja, el brote rompe la tierra, el árbol juvenil crece años, florece a los
+~9, hace la caída de junio, las noches frías viran la fruta y a los 10 años se elige
+una naranja. Las seis naranjas de proyecto son frutas reales de la copa, en su
+superficie y del lado que ve la cámara, maduradas al color del proyecto.
+
+El clímax abre esa naranja en 3D (`src/cycle/anatomy.js`): el flavedo se abre como
+una flor desde el polo y se va, la fruta gira a sección, el albedo se rasga, los diez
+gajos se separan en abanico con los nombres de los cinco primeros (números y una
+referencia en pantallas angostas), el elegido se abre y suelta la semilla. Esa semilla
+vuela al punto y al tamaño exactos donde cuelga la semilla de la vuelta siguiente, así
+que el corte del bucle no se ve. Pasar el puntero sobre un gajo escribe su glosa.
+`tests/test-root-browser.mjs` recorre las etapas en WebGL real, la etiqueta del
+proyecto, "Next fruit", el bucle, el respaldo 2D y la referencia en móvil.
 
 ## Laboratorio 3D (aislado)
 

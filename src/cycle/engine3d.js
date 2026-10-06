@@ -104,8 +104,9 @@ export function createEngine(host) {
   const title = document.createElement('div')
   const ideasBox = document.createElement('div')
   const gloss = document.createElement('div')
+  const keyList = document.createElement('div')
   const names = Array.from({ length: 5 }, () => document.createElement('div'))
-  for (const el of [title, ideasBox, gloss, ...names]) { el.style.position = 'absolute'; overlay.appendChild(el) }
+  for (const el of [title, ideasBox, gloss, keyList, ...names]) { el.style.position = 'absolute'; overlay.appendChild(el) }
   Object.assign(gloss.style, { maxWidth: '30ch', fontStyle: 'italic' })
   document.body.appendChild(overlay)
 
@@ -372,7 +373,7 @@ export function createEngine(host) {
     // labels (or above them on a tall narrow screen).
     const reach = T.lerp(2.1, 2.4, fanned)
     const d = reach / Math.tan(21 * Math.PI / 180) / Math.min(1, insideCamera.aspect) * (narrow ? 1.2 : 1)
-    const shiftX = narrow ? 0 : reach * 0.42, shiftY = narrow ? -reach * 0.45 : 0
+    const shiftX = narrow ? 0 : reach * 0.42, shiftY = narrow ? reach * 0.12 : 0
     insideCamera.position.set(shiftX, 0.15 + shiftY, d)
     insideCamera.lookAt(shiftX, shiftY, 0)
     insideCamera.updateMatrixWorld()
@@ -440,7 +441,13 @@ export function createEngine(host) {
       const about = hover >= 0 ? gajos[hover].about : ''
       glossShown = REDUCED ? about.length : Math.min(about.length, glossShown + 2)
       gloss.textContent = about.slice(0, glossShown)
-      Object.assign(gloss.style, narrow ? { left: '20px', top: '230px' } : { left: '60%', top: '48%' })
+      Object.assign(gloss.style, narrow ? { left: '20px', top: '330px' } : { left: '60%', top: '48%' })
+      // On a tall narrow screen the carpels carry numbers; the key names them.
+      keyList.style.display = narrow ? 'block' : 'none'
+      if (narrow) {
+        keyList.innerHTML = gajos.map((g, k) => `<div style="opacity:${k === chosenGajo ? 1 : 0.65};font-weight:${k === chosenGajo ? 600 : 400}">${k + 1}  ${g.name}</div>`).join('')
+        Object.assign(keyList.style, { left: '20px', top: '222px', opacity: fanned.toFixed(2) })
+      }
     }
   }
   const seedCam = new THREE.PerspectiveCamera(42, 1, 0.001, 10)
