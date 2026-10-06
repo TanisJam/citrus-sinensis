@@ -444,8 +444,24 @@ function include(bounds, x, y, z, radius) {
   bounds.max.z = Math.max(bounds.max.z, z + radius)
 }
 
+// The hot loops read flat typed copies of the (frozen) topology, built once.
+const packs = new WeakMap()
+function pack(topology) {
+  let pk = packs.get(topology)
+  if (pk) return pk
+  const { nodes, leaves } = topology
+  const delta = new Float64Array(nodes.length * 3), origin = new Float64Array(nodes.length * 3)
+  nodes.forEach((n, i) => { delta.set(n.delta, i * 3); origin.set(n.origin, i * 3) })
+  const leafDir = new Float64Array(leaves.length * 3)
+  leaves.forEach((l, i) => leafDir.set(l.direction, i * 3))
+  pk = { delta, origin, leafDir, bloom: topology.flowers.reduce((m, f) => Math.min(m, f.bud), 1) }
+  packs.set(topology, pk)
+  return pk
+}
+
 // No integration, topology edits or per-sample arrays/objects. Arbitrary seeks are exact.
 export function sampleGrowth(topology, progress, out) {
+  const pk = pack(topology)
   const p = clamp(progress)
   out.progress = p
   out.ageDays = ageAtProgress(p)
@@ -475,12 +491,12 @@ export function sampleGrowth(topology, progress, out) {
     out.lengths[i] = node.length * g
     out.maturity[i] = g > 0 ? ramp(p, node.start, node.matureAt) : 0
     out.load[i] = node.kind === 'root' ? node.length * g : 0
+    const reach = Math.min(support, node.attach), po = node.parent * 3
     for (let axis = 0; axis < 3; axis++) {
       // Hidden buds follow the growing parent tip; once visible the rest anchor is fixed.
-      const start = node.parent < 0 ? node.origin[axis] : out.starts[node.parent * 3 + axis]
-        + nodes[node.parent].delta[axis] * Math.min(support, node.attach)
+      const start = node.parent < 0 ? pk.origin[offset + axis] : out.starts[po + axis] + pk.delta[po + axis] * reach
       out.starts[offset + axis] = start
-      out.ends[offset + axis] = start + node.delta[axis] * g
+      out.ends[offset + axis] = start + pk.delta[offset + axis] * g
     }
   }
   // Leaves are sorted by emergence: stop at the first unborn one, and clear
@@ -500,10 +516,10 @@ export function sampleGrowth(topology, progress, out) {
     out.leafScales[leaf.id] = leaf.size * grown * (1 - ramp(p, leaf.drop, leaf.dropEnd))
     out.leafMaturity[leaf.id] = grown > 0 ? ramp(p, leaf.start, leaf.matureAt) : 0
     out.load[leaf.parent] += grown * (leaf.size / 0.11) ** 2
+    const reach = Math.min(support, leaf.attach), po = leaf.parent * 3, lo = k * 3
     for (let axis = 0; axis < 3; axis++) {
-      out.leafPositions[offset + axis] = out.starts[leaf.parent * 3 + axis]
-        + nodes[leaf.parent].delta[axis] * Math.min(support, leaf.attach)
-      out.leafDirections[offset + axis] = leaf.direction[axis]
+      out.leafPositions[offset + axis] = out.starts[po + axis] + pk.delta[po + axis] * reach
+      out.leafDirections[offset + axis] = pk.leafDir[lo + axis]
     }
   }
   for (const thorn of thorns) {
@@ -546,7 +562,7 @@ export function sampleGrowth(topology, progress, out) {
   }
   // Bloom and fruit only exist late in the cycle: skip them before, but clear
   // whatever a later seek left, so every seek order stays exact.
-  const blooming = topology.flowers.length && p >= topology.flowers.reduce((m, f) => Math.min(m, f.bud), 1)
+  const blooming = topology.flowers.length && p >= pk.bloom
   if (!blooming) {
     if (out.flowersDirty) {
       for (const key of ['flowerPositions', 'flowerDirections', 'budScales', 'flowerScales', 'fruitPositions', 'fruitScales', 'fruitColors']) out[key].fill(0)
@@ -560,15 +576,16 @@ export function sampleGrowth(topology, progress, out) {
     // A bud swells for ~a month, the corolla opens over a few days, petals fall.
     out.budScales[f.id] = born * f.size * 0.3 * ramp(p, f.bud, f.open) * (1 - ramp(p, f.open, f.open + (f.fall - f.open) * 0.3))
     out.flowerScales[f.id] = born * f.size * ramp(p, f.open - (f.fall - f.open) * 0.2, f.open + (f.fall - f.open) * 0.2) * (1 - ramp(p, f.fall - (f.fall - f.open) * 0.15, f.fall))
+    const reach = Math.min(support, f.attach), po = f.parent * 3
     for (let axis = 0; axis < 3; axis++) {
-      out.flowerPositions[o + axis] = out.starts[f.parent * 3 + axis] + nodes[f.parent].delta[axis] * Math.min(support, f.attach)
+      out.flowerPositions[o + axis] = out.starts[po + axis] + pk.delta[po + axis] * reach
       out.flowerDirections[o + axis] = f.direction[axis]
     }
     const s = Math.max(out.budScales[f.id], out.flowerScales[f.id])
     if (s > 0) include(out.bounds, out.flowerPositions[o], out.flowerPositions[o + 1], out.flowerPositions[o + 2], s * 0.6)
   }
-  topology.fruits.forEach((fruit, i) => {
-    const f = topology.flowers[fruit.flower], o = i * 3
+  for (let i = 0; i < topology.fruits.length; i++) {
+    const fruit = topology.fruits[i], f = topology.flowers[fruit.flower], o = i * 3
     // Stage I slow growth to ~1.5 cm, stage II expansion to full size; dropped
     // fruitlets fall at the abscission zone and are gone.
     const diameter = 0.004 + 0.011 * ramp(p, fruit.set, fruit.slow) + (fruit.size - 0.015) * ramp(p, fruit.slow, fruit.full) ** 0.8
@@ -580,6 +597,6 @@ export function sampleGrowth(topology, progress, out) {
     out.fruitPositions[o + 1] = out.flowerPositions[f.id * 3 + 1] - r - 0.008 * Math.min(1, r / 0.03)
     out.fruitPositions[o + 2] = out.flowerPositions[f.id * 3 + 2]
     if (r > 0) include(out.bounds, out.fruitPositions[o], out.fruitPositions[o + 1], out.fruitPositions[o + 2], r * 1.05)
-  })
+  }
   return out
 }

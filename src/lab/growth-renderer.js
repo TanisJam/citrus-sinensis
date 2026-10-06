@@ -159,8 +159,16 @@ export function createGrowthRenderer(topology) {
   const roots = add('roots', tubeGeometry(rootNodes.length), material({ vertexColors: true, roughness: 0.95 }))
   const wood = add('wood', tubeGeometry(woodNodes.length), material({ vertexColors: true, roughness: 0.85 }))
   const leafSurface = material({ color: 0xffffff, roughness: 0.38, side: THREE.DoubleSide })
-  // The underside is paler and matte.
+  // Wind (see updateWind) rotates each blade about its petiole on the GPU; the
+  // underside is paler and matte.
+  const wind = { time: { value: 0 }, strength: { value: 0 } }
   leafSurface.onBeforeCompile = shader => {
+    shader.uniforms.uWindTime = wind.time
+    shader.uniforms.uWind = wind.strength
+    const flutter = 'float wa = uWind * 0.14 * sin(uWindTime * 1.7 + float(gl_InstanceID) * 2.399963); float wc = cos(wa), ws = sin(wa);'
+    shader.vertexShader = 'uniform float uWindTime, uWind;\n' + shader.vertexShader
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>\n${flutter}\nobjectNormal = vec3(objectNormal.x, wc * objectNormal.y - ws * objectNormal.z, ws * objectNormal.y + wc * objectNormal.z);`)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = vec3(transformed.x, wc * transformed.y - ws * transformed.z, ws * transformed.y + wc * transformed.z);')
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
       '#include <color_fragment>\nif (!gl_FrontFacing) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.55, 0.26), 0.35);')
   }
@@ -196,28 +204,44 @@ export function createGrowthRenderer(topology) {
   // Copy leaf pose into owned buffers: callers may immediately reuse their sample.
   const anchors = new Float64Array(topology.leaves.length * 3)
   const directions = new Float64Array(anchors.length), scales = new Float64Array(topology.leaves.length)
+  const shades = new Int16Array(topology.leaves.length).fill(-1), dirty = new Uint8Array(topology.leaves.length)
+  anchors.fill(NaN)
   let disposed = false, windEnabled = false, windTime = 0
 
   function setBounds(box, sphere) {
     box.copy(bounds)
     box.getBoundingSphere(sphere)
   }
+  // Radii are drawn on a 0.01 mm grid and bark age in 1/64 steps, so a tube's
+  // look is a pure function of these keys: unchanged segments are skipped,
+  // which is most of a grown tree on most frames, and every seek stays exact.
+  const tubeCache = new Map()
   function updateTubes(mesh, nodes, sample, isRoot) {
     const { position: positions, normal: normals, color: colors } = mesh.geometry.attributes
+    let cache = tubeCache.get(mesh)
+    if (!cache) tubeCache.set(mesh, cache = new Float32Array(nodes.length * 9).fill(NaN))
+    let changed = false
     for (let slot = 0; slot < nodes.length; slot++) {
       const id = nodes[slot].id, offset = id * 3, base = slot * STRIDE
+      const key = [sample.starts[offset], sample.starts[offset + 1], sample.starts[offset + 2],
+        sample.ends[offset], sample.ends[offset + 1], sample.ends[offset + 2],
+        Math.round(sample.radii[id * 2] * 1e5), Math.round(sample.radii[id * 2 + 1] * 1e5), Math.round(sample.maturity[id] * 64)]
+      let same = true
+      for (let k = 0; k < 9; k++) if (cache[slot * 9 + k] !== Math.fround(key[k])) { same = false; cache[slot * 9 + k] = key[k] }
+      if (same) continue
+      changed = true
       start.fromArray(sample.starts, offset)
       end.fromArray(sample.ends, offset)
       direction.subVectors(end, start)
       const length = direction.length()
       if (length > 0) rotation.setFromUnitVectors(up, direction.divideScalar(length))
       else rotation.identity()
-      const slope = length > 0 ? (sample.radii[id * 2] - sample.radii[id * 2 + 1]) / length : 0
-      const age = sample.maturity[id]
+      const r0 = key[6] / 1e5, r1 = key[7] / 1e5, age = key[8] / 64
+      const slope = length > 0 ? (r0 - r1) / length : 0
       if (isRoot) tint.copy(ROOT_TIP).lerp(ROOT_OLD, age)
-      else tint.copy(SHOOT).lerp(bark.copy(BARK).lerp(OLD_BARK, Math.min(1, sample.radii[id * 2] / 0.04)), age)
+      else tint.copy(SHOOT).lerp(bark.copy(BARK).lerp(OLD_BARK, Math.min(1, r0 / 0.04)), age)
       for (let ring = 0; ring < 2; ring++) {
-        const center = ring ? end : start, radius = sample.radii[id * 2 + ring]
+        const center = ring ? end : start, radius = ring ? r1 : r0
         for (let s = 0; s < SIDES; s++) {
           const angle = s * Math.PI * 2 / SIDES, vertex = base + ring * SIDES + s
           radial.set(Math.cos(angle), 0, Math.sin(angle)).applyQuaternion(rotation)
@@ -232,13 +256,14 @@ export function createGrowthRenderer(topology) {
         colors.setXYZ(base + SIDES * 2 + ring, tint.r, tint.g, tint.b)
       }
     }
-    positions.needsUpdate = normals.needsUpdate = colors.needsUpdate = true
+    if (changed) positions.needsUpdate = normals.needsUpdate = colors.needsUpdate = true
     setBounds(mesh.geometry.boundingBox, mesh.geometry.boundingSphere)
   }
   // Leaf frame: length along its direction; the blade turns toward the light,
   // i.e. up and out of the crown, as leaves on a citrus canopy surface do.
-  function poseLeaves() {
-    for (let i = 0; i < leaves.count; i++) {
+  function poseLeaves(from = 0, to = leaves.count, only = null) {
+    for (let i = from; i < to; i++) {
+      if (only && !only[i]) continue
       direction.fromArray(directions, i * 3).normalize()
       start.fromArray(anchors, i * 3)
       // Outward only sideways or upward: low and seedling leaves still face the sky.
@@ -250,8 +275,6 @@ export function createGrowthRenderer(topology) {
       face.crossVectors(side, direction)
       if (face.dot(light) < 0) { side.negate(); face.negate() }
       matrix.makeBasis(side, direction, face)
-      // Wind flutters the blade about the petiole's hinge axis.
-      if (windEnabled) matrix.multiply(gust.makeRotationX(0.14 * Math.sin(windTime * 1.7 + i * 2.399963)))
       matrix.scale(scale.setScalar(scales[i]))
       matrix.setPosition(start)
       leaves.setMatrixAt(i, matrix)
@@ -260,13 +283,14 @@ export function createGrowthRenderer(topology) {
     // Rigid rotation about the petiole stays inside the model's 1.1*scale ball.
     setBounds(leaves.boundingBox, leaves.boundingSphere)
   }
+  // Wind flutters each blade about its petiole's hinge axis, in the vertex
+  // shader: no per-frame work on the CPU, and turning it off is exact.
   function updateWind(time, enabled) {
     if (disposed) return
-    const was = windEnabled
     windTime = Number.isFinite(time) ? time : 0
     windEnabled = Boolean(enabled)
-    // A still canopy needs no per-frame work.
-    if (windEnabled || was) poseLeaves()
+    wind.time.value = windTime
+    wind.strength.value = windEnabled ? 1 : 0
   }
   function updateGrowth(sample) {
     if (disposed) return
@@ -274,16 +298,27 @@ export function createGrowthRenderer(topology) {
     bounds.max.set(sample.bounds.max.x, sample.bounds.max.y, sample.bounds.max.z)
     updateTubes(roots, rootNodes, sample, true)
     updateTubes(wood, woodNodes, sample, false)
-    anchors.set(sample.leafPositions)
-    directions.set(sample.leafDirections)
-    scales.set(sample.leafScales)
-    // Unborn leaves (sorted last) are not drawn at all.
+    // Unborn leaves (sorted last) are not drawn at all; of the rest, only the
+    // ones that moved, grew or changed colour are rewritten.
     leaves.count = sample.leafCount
+    let anyLeaf = false
     for (let i = 0; i < leaves.count; i++) {
-      tint.copy(LEAF_YOUNG).lerp(LEAF_MATURE, sample.leafMaturity[i])
-      leaves.instanceColor.setXYZ(i, tint.r, tint.g, tint.b)
+      const o = i * 3, m = Math.round(sample.leafMaturity[i] * 64)
+      const moved = anchors[o] !== sample.leafPositions[o] || anchors[o + 1] !== sample.leafPositions[o + 1] || anchors[o + 2] !== sample.leafPositions[o + 2]
+        || scales[i] !== sample.leafScales[i] || directions[o] !== sample.leafDirections[o] || directions[o + 1] !== sample.leafDirections[o + 1]
+        || directions[o + 2] !== sample.leafDirections[o + 2] || shades[i] !== m
+      dirty[i] = moved ? 1 : 0
+      if (!moved) continue
+      anyLeaf = true
+      for (let a = 0; a < 3; a++) { anchors[o + a] = sample.leafPositions[o + a]; directions[o + a] = sample.leafDirections[o + a] }
+      scales[i] = sample.leafScales[i]
+      if (shades[i] !== m) {
+        shades[i] = m
+        tint.copy(LEAF_YOUNG).lerp(LEAF_MATURE, sample.leafMaturity[i])
+        leaves.instanceColor.setXYZ(i, tint.r, tint.g, tint.b)
+        leaves.instanceColor.needsUpdate = true
+      }
     }
-    leaves.instanceColor.needsUpdate = true
     for (let i = 0; i < topology.thorns.length; i++) {
       direction.fromArray(sample.thornDirections, i * 3).normalize()
       rotation.setFromUnitVectors(up, direction)
@@ -328,7 +363,8 @@ export function createGrowthRenderer(topology) {
       shell.scale.set(w, h, d).multiplyScalar(fraction)
       shell.visible = fraction > 0
     }
-    poseLeaves()
+    if (anyLeaf) poseLeaves(0, leaves.count, dirty)
+    else setBounds(leaves.boundingBox, leaves.boundingSphere)
   }
   function dispose() {
     if (disposed) return
@@ -339,5 +375,5 @@ export function createGrowthRenderer(topology) {
     group.removeFromParent()
   }
   updateGrowth(sampleGrowth(topology, 0, createGrowthSample(topology)))
-  return { group, bounds, updateGrowth, updateWind, dispose }
+  return { group, bounds, updateGrowth, updateWind, dispose, wind }
 }

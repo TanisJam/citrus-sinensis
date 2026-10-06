@@ -42,7 +42,7 @@ for (let step = 0; step <= 120; step++) {
       for (let end = 0; end < 2; end++) {
         const center = slot * 18 + 16 + end
         for (let axis = 0; axis < 3; axis++) near(positions.array[center * 3 + axis], (end ? sample.ends : sample.starts)[node.id * 3 + axis], 'tube end')
-        const radius = sample.radii[node.id * 2 + end]
+        const radius = Math.round(sample.radii[node.id * 2 + end] * 1e5) / 1e5 // drawn on a 0.01 mm grid
         vertex.fromBufferAttribute(positions, slot * 18 + end * 8)
         near(vertex.distanceTo(new THREE.Vector3().fromBufferAttribute(positions, center)), radius, 'ring radius')
       }
@@ -65,21 +65,23 @@ for (let step = 0; step <= 120; step++) {
     leaves.getColorAt(i, color)
     assert.ok(color.g > color.r && color.g > color.b, 'leaves are green at every age')
   }
+  // Wind is a rigid flutter about the petiole, in the vertex shader: the
+  // instance frames never move, and any rotation of the 1.1 ball stays inside
+  // the bounds, so checking the static frames bounds every gust.
   const baseline = leaves.instanceMatrix.array.slice()
   renderer.updateWind(step * 0.17, true)
-  if (step === 120) assert.notDeepEqual(leaves.instanceMatrix.array, baseline)
+  assert.deepEqual([renderer.wind.time.value, renderer.wind.strength.value], [step * 0.17, 1])
+  assert.deepEqual(leaves.instanceMatrix.array, baseline, 'wind leaves the instance frames alone')
   for (const i of probe.filter(i => i < leaves.count && sample.leafScales[i] > 0)) {
     leaves.getMatrixAt(i, matrix)
-    for (let axis = 0; axis < 3; axis++) near(matrix.elements[12 + axis], sample.leafPositions[i * 3 + axis], 'wind keeps the petiole fixed')
-    for (let j = 0; j < leafPosition.count; j++) {
-      vertex.fromBufferAttribute(leafPosition, j).applyMatrix4(matrix)
-      for (const axis of ['x', 'y', 'z']) {
-        assert.ok(vertex[axis] >= sample.bounds.min[axis] - 2e-6 && vertex[axis] <= sample.bounds.max[axis] + 2e-6, 'leaf inside bounds')
-      }
+    const reach = 1.1 * matrix.getMaxScaleOnAxis()
+    for (const [k, axis] of ['x', 'y', 'z'].entries()) {
+      const c = matrix.elements[12 + k]
+      assert.ok(c - reach >= sample.bounds.min[axis] - 2e-6 && c + reach <= sample.bounds.max[axis] + 2e-6, 'swaying leaf inside bounds')
     }
   }
   renderer.updateWind(-step, false)
-  assert.deepEqual(leaves.instanceMatrix.array, baseline, 'wind off restores the static pose exactly')
+  assert.equal(renderer.wind.strength.value, 0, 'wind off is the static pose')
   for (const [object, geometry, material, position, normal, index, instances, colors] of identities) {
     assert.equal(object.geometry, geometry)
     assert.equal(object.material, material)
