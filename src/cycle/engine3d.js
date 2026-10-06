@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { PROJECTS, IDEAS, STAGES } from '../engine/engine.js'
 import * as T from './timeline.js'
-import { createGrowthTopology, createGrowthSample, sampleGrowth, progressAtAge, SEED_DEPTH, SEED_SIZE } from '../lab/growth-model.js'
+import { createGrowthTopology, createGrowthSample, sampleGrowth, progressAtAge, SEED_DEPTH, SEED_SIZE, CROWN } from '../lab/growth-model.js'
 import { createGrowthRenderer } from '../lab/growth-renderer.js'
 import { sampleGrowthCamera } from '../lab/camera-timeline.js'
 import { createAnatomy } from './anatomy.js'
@@ -18,6 +18,7 @@ export function createEngine(host) {
   const AT = /[?&]at=([0-9.]+)/.exec(search)
   const HOLD = /[?&]hold\b/.test(search)
   const listeners = []
+  const v3a = new THREE.Vector3()
   const listen = (type, fn, opts) => { addEventListener(type, fn, opts); listeners.push([type, fn, opts]) }
 
   // Throws without WebGL: the page then falls back to the 2D engine.
@@ -33,21 +34,24 @@ export function createEngine(host) {
   sun.position.set(4, 9, 6)
   world.add(hemi, sun)
   // Sky dome: zenith to horizon gradient, recoloured for dusk and night.
-  const skyUniforms = { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() } }
-  const skyDome = new THREE.Mesh(new THREE.SphereGeometry(90, 32, 16), new THREE.ShaderMaterial({
-    uniforms: skyUniforms, side: THREE.BackSide, depthWrite: false, fog: false,
+  // Below the horizon it is earth: through the translucent soil near the trunk
+  // the roots read against dark ground, as in a cut, never against sky.
+  const skyUniforms = { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, earth: { value: new THREE.Color('#3a2b1e') } }
+  const skyDome = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), new THREE.ShaderMaterial({
+    uniforms: skyUniforms, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
     vertexShader: 'varying vec3 w; void main(){ w = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
-    fragmentShader: 'uniform vec3 top, horizon; varying vec3 w; void main(){ float h = clamp(w.y, 0., 1.); gl_FragColor = vec4(mix(horizon, top, pow(h, .55)), 1.); }',
+    fragmentShader: 'uniform vec3 top, horizon, earth; varying vec3 w; void main(){ float h = clamp(w.y, 0., 1.); vec3 c = w.y < 0. ? mix(horizon, earth, smoothstep(.01, .12, -w.y)) : mix(horizon, top, pow(h, .55)); gl_FragColor = vec4(c, 1.); }',
   }))
   skyDome.renderOrder = -2
+  skyDome.frustumCulled = false
   world.add(skyDome)
   // Ground to the horizon: translucent near the trunk, so the roots read through
   // the soil as in a cut, opaque further out, fading into the sky with distance.
-  const groundUniforms = { soil: { value: new THREE.Color('#b9a785') }, haze: { value: new THREE.Color() } }
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(88, 64), new THREE.ShaderMaterial({
+  const groundUniforms = { soil: { value: new THREE.Color('#b9a785') }, haze: { value: new THREE.Color() }, light: { value: 1 } }
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 64), new THREE.ShaderMaterial({
     uniforms: groundUniforms, transparent: true, depthWrite: false, side: THREE.DoubleSide,
     vertexShader: 'varying vec2 g; void main(){ g = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
-    fragmentShader: 'uniform vec3 soil, haze; varying vec2 g; void main(){ float r = length(g); float a = mix(.42, 1., smoothstep(3.5, 8., r)); gl_FragColor = vec4(mix(soil, haze, smoothstep(12., 80., r)), a); }',
+    fragmentShader: 'uniform vec3 soil, haze; uniform float light; varying vec2 g; void main(){ float r = length(g); float a = mix(.5, 1., smoothstep(3.5, 8., r)); gl_FragColor = vec4(mix(soil * light, haze, smoothstep(12., 55., r)), a); }',
   }))
   ground.rotation.x = -Math.PI / 2
   ground.position.y = -0.0005
@@ -128,15 +132,31 @@ export function createEngine(host) {
   const candidates = topology.fruits.map((f, i) => i).filter(i => topology.fruits[i].retained).map(i => {
     const x = sample.fruitPositions[i * 3], y = sample.fruitPositions[i * 3 + 1], z = sample.fruitPositions[i * 3 + 2]
     const r = Math.hypot(x, z) || 1
-    return { i, y, front: (x * facing[0] + z * facing[1]) / r, side: (x * facing[1] - z * facing[0]) }
-  }).filter(c => c.front > 0.55 && c.y > 1.4 && c.y < 4)
+    // On the crown's outer surface, where oranges show on a real tree.
+    const surface = (x * x + z * z) / CROWN.radius ** 2 + Math.abs((y - CROWN.y) / CROWN.height) ** 2.6
+    return { i, y, surface, front: (x * facing[0] + z * facing[1]) / r, side: (x * facing[1] - z * facing[0]) }
+  }).filter(c => c.front > 0.55 && c.y > 1.4 && c.y < 4 && c.surface > 0.72)
   candidates.sort((a, b) => a.side - b.side)
   // If the front is sparse, fall back to any ripe fruit rather than fail.
   const pool = candidates.length >= PROJECTS.length ? candidates
     : topology.fruits.map((f, i) => ({ i, side: i })).filter(c => topology.fruits[c.i].retained)
   const named = PROJECTS.map((_, k) => pool[Math.floor((k + 0.5) * pool.length / PROJECTS.length)].i)
   const hueColors = PROJECTS.map(p => new THREE.Color(p.hue))
+  // Leaves between the close-up camera and each project orange are moved aside
+  // while the camera comes in, like a hand parting the foliage.
+  const outwardOf = i => new THREE.Vector3(sample.fruitPositions[i * 3], 0, sample.fruitPositions[i * 3 + 2]).normalize().add(new THREE.Vector3(0, 0.25, 0))
+  const parted = named.map(i => {
+    const f = new THREE.Vector3().fromArray(sample.fruitPositions, i * 3)
+    const a = f.clone().addScaledVector(outwardOf(i), 0.05), b = f.clone().addScaledVector(outwardOf(i), 0.75)
+    const line = new THREE.Line3(a, b), q = new THREE.Vector3(), out = []
+    for (let k = 0; k < topology.leaves.length; k++) {
+      line.closestPointToPoint(q.fromArray(sample.leafPositions, k * 3), true, v3a)
+      if (v3a.distanceTo(q) < 0.16) out.push(k)
+    }
+    return out
+  })
   const green = new THREE.Color(0x4b7a24), tint = new THREE.Color(), matrix = new THREE.Matrix4()
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0), leafMesh = plant.group.getObjectByName('leaves')
 
   // ---------- Scroll, loop, choice.
   let target = 0, p = 0, pPrev = 0, scrollV = 0, skipV = false
@@ -173,7 +193,7 @@ export function createEngine(host) {
   resize()
 
   // ---------- Growth, sampled only when the age actually changes.
-  let lastModel = -1
+  let lastModel = -1, partedNow = false
   function grow(pe) {
     const days = T.ageAt(pe)
     const mp = Math.round(progressAtAge(days) * 20000) / 20000
@@ -199,6 +219,11 @@ export function createEngine(host) {
       fruitMesh.instanceColor.needsUpdate = true
       fruitMesh.instanceMatrix.needsUpdate = true
     }
+    if (pe >= 0.776) {
+      for (const k of parted[chosenFruit]) if (k < leafMesh.count) leafMesh.setMatrixAt(k, zero)
+      leafMesh.instanceMatrix.needsUpdate = true
+      partedNow = true
+    } else if (partedNow) { partedNow = false; lastModel = -1 }
     // The model's buried seed takes over from the falling one once it is covered,
     // and swells as it drinks (imbibition, up to +30%).
     const buried = pe >= 0.062
@@ -215,11 +240,14 @@ export function createEngine(host) {
   const fitPose = { position: new THREE.Vector3(), target: new THREE.Vector3(), near: 0.005, far: 50 }
   const tmpA = { position: new THREE.Vector3(), target: new THREE.Vector3() }
   const tmpB = { position: new THREE.Vector3(), target: new THREE.Vector3() }
-  const seedDir = new THREE.Vector3(Math.sin(0.5) * Math.cos(0.15), Math.sin(0.15), Math.cos(0.5) * Math.cos(0.15))
+  // Seen from a little below: sky behind the falling seed, as in the 2D piece,
+  // and the horizon rising into view as it reaches the soil.
+  const seedDir = new THREE.Vector3(Math.sin(0.5) * Math.cos(-0.22), Math.sin(-0.22), Math.cos(0.5) * Math.cos(-0.22))
   // The seed sits in the lower third, clear of the title card.
   function seedPose(out, y) {
     out.target.set(0, y + 0.017, 0)
     out.position.set(0, y, 0).addScaledVector(seedDir, 0.11).add(new THREE.Vector3(0, 0.017, 0))
+    out.position.y = Math.max(out.position.y, 0.004)
     return out
   }
   function undergroundPose(out) {
@@ -259,6 +287,7 @@ export function createEngine(host) {
     const out2 = new THREE.Vector3(point.x, 0, point.z).normalize()
     out.target.copy(point)
     out.position.copy(point).addScaledVector(out2, distance).add(new THREE.Vector3(0, distance * 0.25, 0))
+    // The same path the leaves were parted along.
     return out
   }
   const fruitPoint = new THREE.Vector3()
@@ -289,8 +318,8 @@ export function createEngine(host) {
   }
 
   // ---------- Day, night, and whether the page sits on dark.
-  const SKY_DAY = new THREE.Color('#dfe7e4'), SKY_DUSK = new THREE.Color('#c99b7a'), SKY_NIGHT = new THREE.Color('#121c26')
-  const ZENITH_DAY = new THREE.Color('#7fa6c6'), ZENITH_NIGHT = new THREE.Color('#070d16')
+  const SKY_DAY = new THREE.Color('#dfe7e4'), SKY_DUSK = new THREE.Color('#c99b7a'), SKY_NIGHT = new THREE.Color('#22324a')
+  const ZENITH_DAY = new THREE.Color('#7fa6c6'), ZENITH_NIGHT = new THREE.Color('#0e1a2e')
   const SUN = new THREE.Color('#fff4da'), MOON = new THREE.Color('#9fb6dd')
   const SOIL = new THREE.Color('#3a2b1e')
   const soilFog = new THREE.Fog(SOIL, 1, 3), skyFog = new THREE.Fog(SOIL, 25, 85)
@@ -347,6 +376,10 @@ export function createEngine(host) {
     insideCamera.position.set(shiftX, 0.15 + shiftY, d)
     insideCamera.lookAt(shiftX, shiftY, 0)
     insideCamera.updateMatrixWorld()
+    // Light the opened fruit from where the sun was, relative to the eye, so the
+    // orange keeps its look as it leaves the branch.
+    insideSun.position.copy(sun.position).normalize().transformDirection(camera.matrixWorldInverse)
+      .transformDirection(insideCamera.matrixWorld).multiplyScalar(10)
     const enter = T.smooth(T.ramp(pe, T.IN_ENTER))
     // Arrive from where the fruit was on screen, at the size it had there.
     entryNDC.copy(fruitPoint).project(camera)
@@ -435,13 +468,14 @@ export function createEngine(host) {
 
     // The world behind the interior is already the next lap's first frame.
     const worldPe = pe >= 0.93 ? 0 : pe
-    grow(worldPe)
+    // Wind first: growth then parts the leaves in front of the chosen orange.
     plant.updateWind(now / 1000, !REDUCED && worldPe > 0.3)
+    grow(worldPe)
     const view = direct(worldPe)
     camera.position.copy(view.position)
     camera.lookAt(view.target)
     const span = view.position.distanceTo(view.target)
-    camera.near = Math.max(0.0005, span * 0.02); camera.far = span * 4 + 20
+    camera.near = Math.max(0.0005, span * 0.02); camera.far = Math.max(span * 4 + 20, 130)
     camera.updateProjectionMatrix()
     seedCam.aspect = camera.aspect; seedCam.position.copy(seedPose(tmpA, SEED_START).position); seedCam.lookAt(tmpA.target); seedCam.updateProjectionMatrix(); seedCam.updateMatrixWorld()
     // Sky by day and night; the soil when the camera is under it.
@@ -452,11 +486,13 @@ export function createEngine(host) {
     soilFog.near = span * 0.8; soilFog.far = span * 3
     world.fog = under ? soilFog : skyFog
     // Moonlight keeps the tree legible at night, blue and dim.
-    hemi.intensity = 2.2 * (1 - 0.62 * night); sun.intensity = 2.4 * (1 - 0.55 * night)
+    hemi.intensity = 2.2 * (1 - 0.5 * night); sun.intensity = 2.4 * (1 - 0.45 * night)
     sun.color.copy(SUN).lerp(MOON, night)
     skyUniforms.horizon.value.copy(sky)
     skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night)
     groundUniforms.haze.value.copy(sky)
+    groundUniforms.light.value = 1 - 0.62 * night
+    skyDome.position.copy(camera.position)
     skyFog.color.copy(sky)
     const bg = interior > 0.5 ? inside.background : world.background
     const l = luma(bg)
