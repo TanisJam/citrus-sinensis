@@ -17,7 +17,7 @@ const browser = await puppeteer.launch({
   headless: true,
   args: ['--no-sandbox', '--enable-unsafe-swiftshader'],
 })
-const titles = ['Semilla', 'Raíces', 'Brote', 'Tronco', 'Ramas', 'Hojas']
+const titles = ['Semilla', 'Raíces', 'Brote', 'Tronco', 'Ramas', 'Copa', 'Flores', 'Naranjas']
 const failures = []
 function check(name, actual, expected) {
   try { assert.deepEqual(actual, expected); console.log(`PASS ${name}`) }
@@ -74,9 +74,9 @@ try {
       forward.push(await frame(page))
       check(`anchor ${title} ${label}`, await pressed(page), title)
     }
-    check(`six distinct growth frames ${label}`, new Set(forward).size, 6)
+    check(`distinct growth frames ${label}`, new Set(forward).size, titles.length)
     await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
-    check(`page end is fully grown ${label}`, [await frame(page), await pressed(page)], [forward[5], 'Hojas'])
+    check(`page end is fully grown ${label}`, [await frame(page), await pressed(page)], [forward.at(-1), 'Naranjas'])
     const backward = []
     for (const title of [...titles].reverse()) { await click(page, title); backward.unshift(await frame(page)) }
     check(`stage buttons rewind exactly ${label}`, backward, forward)

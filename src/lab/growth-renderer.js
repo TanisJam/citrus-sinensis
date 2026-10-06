@@ -74,7 +74,64 @@ function thornGeometry() {
   return geometry
 }
 
+// Orange blossom, unit diameter, facing +Y: five thick waxy white petals,
+// a ring of 20-25 stamens with yellow anthers, and a green pistil.
+function flowerGeometry() {
+  const positions = [], colors = [], indices = []
+  const vertex = (x, y, z, c) => { positions.push(x, y, z); colors.push(...c); return positions.length / 3 - 1 }
+  const PETAL = [0.97, 0.96, 0.9], STAMEN = [0.95, 0.92, 0.7], ANTHER = [0.95, 0.78, 0.15], PISTIL = [0.45, 0.62, 0.2]
+  for (let k = 0; k < 5; k++) {
+    const a = k * Math.PI * 2 / 5, ca = Math.cos(a), sa = Math.sin(a)
+    const rows = []
+    for (let j = 0; j <= 6; j++) {
+      const r = 0.05 + 0.45 * j / 6
+      // Oblong petal with a blunt tip, cupped then gently reflexed.
+      const w = 0.17 * Math.sin(Math.PI * Math.min(1, (j + 0.6) / 7)) ** 0.7
+      const y = 0.22 * r - 0.28 * r * r
+      rows.push([-1, 0, 1].map(c => vertex(ca * r - sa * w * c, y + 0.03 * Math.abs(c), sa * r + ca * w * c, PETAL)))
+    }
+    for (let j = 0; j < rows.length - 1; j++) {
+      for (let c = 0; c < 2; c++) indices.push(rows[j][c], rows[j + 1][c], rows[j][c + 1], rows[j][c + 1], rows[j + 1][c], rows[j + 1][c + 1])
+    }
+  }
+  for (let k = 0; k < 22; k++) {
+    const a = k * Math.PI * 2 / 22, r = 0.07, ca = Math.cos(a), sa = Math.sin(a), t = 0.012
+    const b0 = vertex(ca * r - sa * t, 0.02, sa * r + ca * t, STAMEN), b1 = vertex(ca * r + sa * t, 0.02, sa * r - ca * t, STAMEN)
+    const top = vertex(ca * r * 1.3, 0.24, sa * r * 1.3, ANTHER)
+    indices.push(b0, b1, top)
+  }
+  for (let k = 0; k < 6; k++) {
+    const a = k * Math.PI / 3, b = (k + 1) * Math.PI / 3
+    const p0 = vertex(Math.cos(a) * 0.03, 0, Math.sin(a) * 0.03, PISTIL), p1 = vertex(Math.cos(b) * 0.03, 0, Math.sin(b) * 0.03, PISTIL)
+    const tip = vertex(0, 0.2, 0, PISTIL)
+    indices.push(p0, tip, p1)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+// Sweet orange: near-spherical, slightly flattened, with a pebbly rind of oil glands.
+function fruitGeometry() {
+  const geometry = new THREE.SphereGeometry(1, 28, 20)
+  const position = geometry.attributes.position, v = new THREE.Vector3()
+  for (let i = 0; i < position.count; i++) {
+    v.fromBufferAttribute(position, i)
+    const pebble = 1 + 0.008 * Math.sin(v.x * 61 + v.y * 37) * Math.sin(v.y * 53 - v.z * 41) * Math.sin(v.z * 47 + v.x * 29)
+    position.setXYZ(i, v.x * pebble, v.y * pebble * 0.95, v.z * pebble)
+  }
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
 const color = hex => new THREE.Color(hex)
+// Green fruit, the colour break (chlorophyll gone, carotenoids showing), ripe orange.
+const FRUIT_GREEN = color(0x4b7a24), FRUIT_BREAK = color(0xc9a42a), FRUIT_RIPE = color(0xf08a12)
 // Young shoots are smooth yellow-green; bark turns greyish-green, old trunks grey-brown.
 const SHOOT = color(0x6f9a34), BARK = color(0x858a70), OLD_BARK = color(0x6a6157)
 const ROOT_TIP = color(0xf1e9d2), ROOT_OLD = color(0x8c6c4b)
@@ -115,6 +172,15 @@ export function createGrowthRenderer(topology) {
     mesh.boundingSphere = new THREE.Sphere()
   }
   leaves.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(topology.leaves.length * 3), 3).setUsage(THREE.DynamicDrawUsage)
+  const buds = add('flower-buds', new THREE.SphereGeometry(1, 8, 6), material({ color: 0xf3efdd, roughness: 0.55 }), topology.flowers.length)
+  const flowers = add('flowers', flowerGeometry(), material({ vertexColors: true, roughness: 0.5, side: THREE.DoubleSide }), topology.flowers.length)
+  const fruits = add('fruits', fruitGeometry(), material({ color: 0xffffff, roughness: 0.55 }), topology.fruits.length)
+  fruits.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(topology.fruits.length * 3), 3).setUsage(THREE.DynamicDrawUsage)
+  for (const mesh of [buds, flowers, fruits]) {
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    mesh.boundingBox = new THREE.Box3()
+    mesh.boundingSphere = new THREE.Sphere()
+  }
   // Seed: buried cotyledons inside a creamy, split seed coat.
   const reserve = add('seed-reserve', new THREE.SphereGeometry(1, 16, 12), material({ color: 0xf4ecd4, roughness: 0.8 }))
   const shellMaterial = material({ color: 0xe6d9b8, roughness: 0.95, side: THREE.DoubleSide })
@@ -226,6 +292,30 @@ export function createGrowthRenderer(topology) {
     }
     thorns.instanceMatrix.needsUpdate = true
     setBounds(thorns.boundingBox, thorns.boundingSphere)
+    for (let i = 0; i < topology.flowers.length; i++) {
+      direction.fromArray(sample.flowerDirections, i * 3).normalize()
+      rotation.setFromUnitVectors(up, direction)
+      start.fromArray(sample.flowerPositions, i * 3)
+      const bud = sample.budScales[i]
+      buds.setMatrixAt(i, matrix.compose(start, rotation, scale.set(bud * 0.55, bud, bud * 0.55)))
+      flowers.setMatrixAt(i, matrix.compose(start, rotation, scale.setScalar(sample.flowerScales[i])))
+    }
+    for (let i = 0; i < topology.fruits.length; i++) {
+      matrix.compose(start.fromArray(sample.fruitPositions, i * 3), rotation.identity(), scale.setScalar(sample.fruitScales[i]))
+      fruits.setMatrixAt(i, matrix)
+      const c = sample.fruitColors[i]
+      tint.copy(FRUIT_GREEN).lerp(FRUIT_BREAK, Math.min(1, c * 2)).lerp(FRUIT_RIPE, Math.max(0, c * 2 - 1))
+      fruits.instanceColor.setXYZ(i, tint.r, tint.g, tint.b)
+    }
+    // Outside the bloom and fruit windows these meshes draw nothing at all.
+    buds.count = sample.budScales.some(v => v > 0) ? topology.flowers.length : 0
+    flowers.count = sample.flowerScales.some(v => v > 0) ? topology.flowers.length : 0
+    fruits.count = sample.fruitScales.some(v => v > 0) ? topology.fruits.length : 0
+    for (const mesh of [buds, flowers, fruits]) {
+      mesh.instanceMatrix.needsUpdate = true
+      setBounds(mesh.boundingBox, mesh.boundingSphere)
+    }
+    fruits.instanceColor.needsUpdate = true
     const [w, h, d] = SEED_SIZE
     reserve.position.fromArray(sample.seedPosition)
     reserve.scale.set(w * 0.88, h * 0.9, d * 0.85).multiplyScalar(sample.seed[0])
@@ -243,8 +333,7 @@ export function createGrowthRenderer(topology) {
   function dispose() {
     if (disposed) return
     disposed = true
-    leaves.dispose()
-    thorns.dispose()
+    for (const mesh of [leaves, thorns, buds, flowers, fruits]) mesh.dispose()
     for (const geometry of geometries) geometry.dispose()
     for (const surface of materials) surface.dispose()
     group.removeFromParent()

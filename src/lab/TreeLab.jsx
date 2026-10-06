@@ -10,7 +10,9 @@ const copy = {
   sprout: ['Brote', 'Hacia las 3 semanas asoma el tallo y abre hojas simples. De una misma semilla salen hasta tres plántulas; la más vigorosa domina y las otras se quedan atrás.'],
   trunk: ['Tronco', 'Al año, unos 40 cm. Es una planta juvenil: cada hoja trae una espina de ~1,5 cm en la axila. Crece por brotaciones, unas tres por año, en leve zigzag.'],
   branches: ['Ramas', 'Desde los 55–80 cm se abren cuatro ramas principales que salen abiertas y se curvan hacia arriba. El tallo verde se vuelve corteza gris; cada hoja vive 2–3 años.'],
-  leaves: ['Hojas', 'A los ~10 años: 4–5 m de alto, copa redondeada y tronco de ~15 cm. Las hojas, de 7–15 cm con pecíolo alado, quedan en la periferia; las raíces finas, en los primeros 40 cm y más allá de la copa.'],
+  leaves: ['Copa', 'Casi 9 años: 4–5 m de alto, copa redondeada y tronco de ~15 cm. Las hojas, de 7–15 cm con pecíolo alado, quedan en la periferia; las raíces finas, en los primeros 40 cm y más allá de la copa.'],
+  flowers: ['Flores', 'Pasada la etapa juvenil, el frío del invierno induce la primera floración: en primavera, con la brotación nueva, se abren azahares blancos de cinco pétalos carnosos y 20–25 estambres. Un árbol adulto da decenas de miles.'],
+  fruit: ['Naranjas', 'Menos del 2 % de las flores llega a fruto: casi todos los frutitos caen en la «caída de junio». Los que quedan crecen ~8 meses, casi todos en la periferia, y viran de verde a naranja con las noches frescas del otoño.'],
 }
 const stages = STAGES.map(({ id }) => ({ id, title: copy[id][0], text: copy[id][1] }))
 const stageAt = p => STAGES.findLast(stage => p >= stage.progress).id
@@ -170,7 +172,7 @@ export function TreeLab() {
         </div>
       </div>
       <footer className="tree-lab-footer">
-        <p>Geometría procedural original en metros. Fuentes y supuestos en el README del proyecto. Sin flores ni frutos: un naranjo de semilla tarda 6–8 años o más en florecer, y quedan fuera de este recorrido. Three.js r185.</p>
+        <p>Geometría procedural original en metros. Fuentes y supuestos en el README del proyecto. Three.js r185.</p>
       </footer>
     </main>
   )

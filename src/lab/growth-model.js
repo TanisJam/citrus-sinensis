@@ -4,16 +4,19 @@
 // simulation: it fixes where and when organs appear, not why.
 export const STAGES = Object.freeze([
   { id: 'seed', progress: 0 },
-  { id: 'roots', progress: 0.1 },
-  { id: 'sprout', progress: 0.24 },
-  { id: 'trunk', progress: 0.4 },
-  { id: 'branches', progress: 0.62 },
-  { id: 'leaves', progress: 1 },
+  { id: 'roots', progress: 0.08 },
+  { id: 'sprout', progress: 0.18 },
+  { id: 'trunk', progress: 0.3 },
+  { id: 'branches', progress: 0.45 },
+  { id: 'leaves', progress: 0.66 },
+  { id: 'flowers', progress: 0.8 },
+  { id: 'fruit', progress: 1 },
 ].map(Object.freeze))
 
 // Plant age at each stage anchor, in days: sowing, radicle, emerged seedling,
-// one year, branching juvenile tree, mature ~10-year canopy.
-export const STAGE_AGES = Object.freeze([0, 10, 45, 365, 1300, 3650])
+// one year, branching juvenile tree, full canopy, first spring bloom (~9 y),
+// ripe fruit (10 y).
+export const STAGE_AGES = Object.freeze([0, 10, 45, 365, 1300, 3200, 3310, 3650])
 export const SEED_DEPTH = 0.015
 const GOLDEN = 2.399963 // ~137.5°, spiral (alternate) phyllotaxy
 const DAY = 1 // ages are authored in days and converted to progress below
@@ -320,6 +323,7 @@ export function createGrowthTopology(seed = 2026) {
       }
     }
   }
+  const lastSeason = []
   // One flush soon after its twig, then the current ones that form the mature
   // outer leaf layer; older leaves fall, so the interior ends up bare.
   for (const host of twigs) {
@@ -332,19 +336,77 @@ export function createGrowthTopology(seed = 2026) {
         lengths: [between(0.12, 0.28)], startDay: start, endDay: Math.min(3640, start + 30), wander: 0.1, envelope: true })
       // Leaves spread along the flush with ~1.5-3 cm internodes.
       if (shoot.length) foliage(shoot[0], Math.max(4, Math.round(nodes[shoot[0]].length / 0.02)), { from: 0.1 })
+      if (shoot.length && start < 3240) lastSeason.push(shoot[0])
     }
+  }
+  // First bloom (~9 years, after the juvenile phase): one intense spring bloom
+  // with the spring flush. Flowers come from leaf axils, singly or in small
+  // groups, on leafy flowering shoots of the new flush and leafless ones on last
+  // season's wood. The tree carries 60-200k flowers; these are a representative
+  // fraction. Under 2% set fruit: most drop as flowers or as fruitlets in the
+  // June drop, and ~90% of what stays hangs in the outer canopy.
+  const flowers = []
+  const BLOOM = 3300
+  function flower(node, attach, leafy) {
+    const n = nodes[node], axisDir = unit(n.delta), [u, v] = perpendiculars(axisDir), a = random() * Math.PI * 2
+    const opens = BLOOM + between(-12, 14)
+    flowers.push({ parent: node, attach, leafy,
+      direction: unit(add(add(scale(axisDir, 0.7), add(scale(u, Math.cos(a)), v, Math.sin(a)), 0.6), [0, 0.25, 0])),
+      size: between(0.04, 0.055), bud: P(opens - 30), open: P(opens), fall: P(opens + between(14, 24)) })
+  }
+  for (const host of twigs) {
+    if (random() < 0.8) {
+      const start = between(3260, 3285)
+      const shoot = axis({ parent: host, attach: between(0.6, 1), kind: 'wood', level: 4,
+        direction: turn(outward(host), between(-1.3, 1.3), between(0, 0.9)), lengths: [between(0.05, 0.12)],
+        startDay: start, endDay: start + 25, wander: 0.1, envelope: true })
+      if (shoot.length) {
+        const leavesOn = Math.max(1, Math.round(nodes[shoot[0]].length / 0.02))
+        foliage(shoot[0], leavesOn, { from: 0.1 })
+        flower(shoot[0], 1, true)
+        for (let k = Math.floor(random() * 4); k > 0; k--) flower(shoot[0], between(0.4, 0.9), true)
+      }
+    }
+    // Leafless inflorescences: 1-6 flowers from axils of last season's wood.
+    for (let k = Math.floor(random() * 7); k > 0; k--) flower(host, between(0.5, 1), false)
+  }
+  // Most bloom sits on the outer shell: last season's flush shoots flower from
+  // their axils, so the whole crown surface turns white.
+  for (const shoot of lastSeason) {
+    if (random() < 0.15) continue
+    for (let k = 1 + Math.floor(random() * 4); k > 0; k--) flower(shoot, between(0.45, 1), false)
+  }
+  // Fruitlets: most flowers start one after petal fall; ~80% of them fall in
+  // the June drop. Leafy, single-flower shoots hold their fruit best.
+  const fruits = []
+  const fruitlets = flowers.map((f, id) => [f, id]).filter(() => random() < 0.7)
+  const weight = f => f.leafy && f.attach === 1 ? 3 : f.leafy ? 1.5 : 1
+  const mean = fruitlets.reduce((sum, [f]) => sum + weight(f), 0) / fruitlets.length
+  for (const [f, id] of fruitlets) {
+    const held = random() < 480 / fruitlets.length * weight(f) / mean
+    const fallDay = ageAtProgress(f.fall)
+    fruits.push(Object.freeze({ flower: id, parent: f.parent, attach: f.attach, retained: held,
+      // Stage I (cell division) is slow for ~9 weeks, stage II expands to full size.
+      set: f.fall, slow: P(fallDay + 63), full: P(fallDay + between(200, 240)),
+      drop: held ? Infinity : P(fallDay + between(25, 70)),
+      // Colour break with the cool autumn nights; orange about a month later.
+      breakAt: P(between(3560, 3590)), ripe: P(between(3615, 3640)),
+      size: between(0.065, 0.09) }))
   }
   // Ordered by emergence, so a renderer can draw only the prefix already born.
   const ordered = leaves.sort((a, b) => a.start - b.start).map((leaf, id) => Object.freeze({ ...leaf, id }))
   return Object.freeze({
     seed, nodes: Object.freeze(nodes.map(Object.freeze)), leaves: Object.freeze(ordered), thorns: Object.freeze(thorns),
+    flowers: Object.freeze(flowers.map((f, id) => Object.freeze({ ...f, id, direction: Object.freeze(f.direction) }))),
+    fruits: Object.freeze(fruits),
   })
 }
 
 export function createGrowthSample(topology) {
   const n = topology.nodes.length, l = topology.leaves.length, t = topology.thorns.length
+  const fl = topology.flowers.length, fr = topology.fruits.length
   return {
-    progress: 0, stage: 'seed', stageIndex: 0, stageFraction: 0, ageDays: 0, leafCount: 0,
+    progress: 0, stage: 'seed', stageIndex: 0, stageFraction: 0, ageDays: 0, leafCount: 0, flowersDirty: false,
     // XYZ triples; growth is normalized rest-length extension; radii are base/tip pairs.
     starts: new Float64Array(n * 3), ends: new Float64Array(n * 3),
     growth: new Float64Array(n), lengths: new Float64Array(n), radii: new Float64Array(n * 2),
@@ -353,6 +415,10 @@ export function createGrowthSample(topology) {
     leafPositions: new Float64Array(l * 3), leafDirections: new Float64Array(l * 3),
     leafScales: new Float64Array(l), leafMaturity: new Float64Array(l),
     thornPositions: new Float64Array(t * 3), thornDirections: new Float64Array(t * 3), thornScales: new Float64Array(t),
+    // Flowers: bud size, then open corolla size; fruits: centre, radius, colour 0 green..1 orange.
+    flowerPositions: new Float64Array(fl * 3), flowerDirections: new Float64Array(fl * 3),
+    budScales: new Float64Array(fl), flowerScales: new Float64Array(fl),
+    fruitPositions: new Float64Array(fr * 3), fruitScales: new Float64Array(fr), fruitColors: new Float64Array(fr),
     // Reserve (cotyledon) and seed-coat fractions, and how far the coat has split.
     seed: new Float64Array(3), seedPosition: new Float64Array([0, -SEED_DEPTH, 0]),
     bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 0, y: 0, z: 0 } },
@@ -478,5 +544,42 @@ export function sampleGrowth(topology, progress, out) {
     const s = out.thornScales[thorn.id], o = thorn.id * 3
     if (s > 0) include(out.bounds, out.thornPositions[o], out.thornPositions[o + 1], out.thornPositions[o + 2], s * 1.1)
   }
+  // Bloom and fruit only exist late in the cycle: skip them before, but clear
+  // whatever a later seek left, so every seek order stays exact.
+  const blooming = topology.flowers.length && p >= topology.flowers.reduce((m, f) => Math.min(m, f.bud), 1)
+  if (!blooming) {
+    if (out.flowersDirty) {
+      for (const key of ['flowerPositions', 'flowerDirections', 'budScales', 'flowerScales', 'fruitPositions', 'fruitScales', 'fruitColors']) out[key].fill(0)
+      out.flowersDirty = false
+    }
+    return out
+  }
+  out.flowersDirty = true
+  for (const f of topology.flowers) {
+    const support = out.growth[f.parent], o = f.id * 3, born = support >= f.attach ? 1 : 0
+    // A bud swells for ~a month, the corolla opens over a few days, petals fall.
+    out.budScales[f.id] = born * f.size * 0.3 * ramp(p, f.bud, f.open) * (1 - ramp(p, f.open, f.open + (f.fall - f.open) * 0.3))
+    out.flowerScales[f.id] = born * f.size * ramp(p, f.open - (f.fall - f.open) * 0.2, f.open + (f.fall - f.open) * 0.2) * (1 - ramp(p, f.fall - (f.fall - f.open) * 0.15, f.fall))
+    for (let axis = 0; axis < 3; axis++) {
+      out.flowerPositions[o + axis] = out.starts[f.parent * 3 + axis] + nodes[f.parent].delta[axis] * Math.min(support, f.attach)
+      out.flowerDirections[o + axis] = f.direction[axis]
+    }
+    const s = Math.max(out.budScales[f.id], out.flowerScales[f.id])
+    if (s > 0) include(out.bounds, out.flowerPositions[o], out.flowerPositions[o + 1], out.flowerPositions[o + 2], s * 0.6)
+  }
+  topology.fruits.forEach((fruit, i) => {
+    const f = topology.flowers[fruit.flower], o = i * 3
+    // Stage I slow growth to ~1.5 cm, stage II expansion to full size; dropped
+    // fruitlets fall at the abscission zone and are gone.
+    const diameter = 0.004 + 0.011 * ramp(p, fruit.set, fruit.slow) + (fruit.size - 0.015) * ramp(p, fruit.slow, fruit.full) ** 0.8
+    const r = p >= fruit.set ? diameter / 2 * (1 - ramp(p, fruit.drop, fruit.drop + 0.002)) : 0
+    out.fruitScales[i] = r
+    out.fruitColors[i] = 0.5 * ramp(p, fruit.breakAt, fruit.ripe) + 0.5 * ramp(p, fruit.ripe, fruit.ripe + 0.004)
+    // The fruit hangs below its stem, heavier as it grows.
+    out.fruitPositions[o] = out.flowerPositions[f.id * 3]
+    out.fruitPositions[o + 1] = out.flowerPositions[f.id * 3 + 1] - r - 0.008 * Math.min(1, r / 0.03)
+    out.fruitPositions[o + 2] = out.flowerPositions[f.id * 3 + 2]
+    if (r > 0) include(out.bounds, out.fruitPositions[o], out.fruitPositions[o + 1], out.fruitPositions[o + 2], r * 1.05)
+  })
   return out
 }

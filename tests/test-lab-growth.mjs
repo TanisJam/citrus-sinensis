@@ -7,9 +7,9 @@ import {
 const topology = createGrowthTopology(42)
 assert.deepEqual(topology, createGrowthTopology(42))
 assert.notDeepEqual(topology.nodes, createGrowthTopology(43).nodes)
-assert.deepEqual(STAGES.map(s => s.id), ['seed', 'roots', 'sprout', 'trunk', 'branches', 'leaves'])
+assert.deepEqual(STAGES.map(s => s.id), ['seed', 'roots', 'sprout', 'trunk', 'branches', 'leaves', 'flowers', 'fruit'])
 assert.equal(stageProgress('seed'), 0)
-assert.equal(stageProgress('leaves'), 1)
+assert.equal(stageProgress('fruit'), 1)
 assert.equal(stageProgress('unknown'), 0)
 for (const [i, stage] of STAGES.entries()) {
   assert.equal(stageProgress(stage.id), stage.progress)
@@ -126,4 +126,31 @@ assert.ok(lateralReach > spread / 2, `roots ${lateralReach} reach past the dripl
 const fine = roots.filter(n => n.level === 3)
 assert.ok(fine.filter(n => tip(n.id)[1] > -0.4).length / fine.length >= 0.8, 'feeder roots are shallow')
 assert.ok(out.bounds.min.y > -2, 'rooting depth within ~1.2-2 m')
-console.log(`growth model: ${topology.nodes.length} segments, ${topology.leaves.length} leaves, ${topology.thorns.length} thorns; structure, rewind and botanical ranges passed`)
+// Bloom: ~5 cm white flowers with the spring flush after the juvenile years.
+for (const f of topology.flowers) {
+  assert.ok(f.size >= 0.04 && f.size <= 0.055)
+  assert.ok(ageAtProgress(f.open) > 3200 && ageAtProgress(f.open) < 3330, 'first bloom ~9 years, in spring')
+  assert.ok(f.fall > f.open && f.open > f.bud)
+}
+at(3000); assert.ok(out.flowerScales.every(v => v === 0) && out.budScales.every(v => v === 0), 'no flowers in the juvenile years')
+at(3310)
+const open = out.flowerScales.filter(v => v > 0).length
+assert.ok(open > 3000, `full bloom, ${open} open flowers drawn`)
+// June drop: under 2% of a real bloom sets; here ~80% of fruitlets fall within ~2 months.
+const retained = topology.fruits.filter(f => f.retained)
+assert.ok(retained.length > 400 && retained.length < 600, `${retained.length} fruit (mature trees carry ~430-680)`)
+assert.ok(retained.length / topology.fruits.length < 0.25, 'most fruitlets drop')
+at(3450)
+assert.equal(out.fruitScales.filter(v => v > 0).length, retained.length, 'June drop is over')
+// Ripe fruit: 6.5-9.5 cm, orange by ~10 years, ~90% hanging in the outer canopy.
+at(3650)
+const fruitIdx = topology.fruits.map((f, i) => i).filter(i => out.fruitScales[i] > 0)
+for (const i of fruitIdx) {
+  assert.ok(out.fruitScales[i] * 2 >= 0.065 && out.fruitScales[i] * 2 <= 0.095)
+  assert.ok(out.fruitColors[i] > 0.9, 'coloured after the cool autumn nights')
+}
+const shell = fruitIdx.filter(i => Math.hypot(out.fruitPositions[i * 3], (out.fruitPositions[i * 3 + 1] - CROWN.y) * CROWN.radius / CROWN.height, out.fruitPositions[i * 3 + 2]) > 1.5).length / fruitIdx.length
+assert.ok(shell > 0.8, `fruit in the outer canopy ${shell}`)
+at(3500)
+assert.ok(fruitIdx.every(i => out.fruitColors[i] === 0), 'green while growing')
+console.log(`growth model: ${topology.nodes.length} segments, ${topology.leaves.length} leaves, ${topology.thorns.length} thorns, ${topology.flowers.length} flowers, ${retained.length} fruit; structure, rewind and botanical ranges passed`)
