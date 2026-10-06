@@ -33,8 +33,8 @@ const aspects = [16 / 9, 1.5, 1, 390 / 600, 390 / 844]
 assert.equal(GROWTH_CAMERA_FOV, 42)
 
 let previous
-for (let step = 0; step <= 300; step++) {
-  const p = step / 300, box = at(p), before = structuredClone(box)
+for (let step = 0; step <= 600; step++) {
+  const p = step / 600, box = at(p), before = structuredClone(box)
   for (const aspect of aspects) {
     const pose = sampleGrowthCamera(box, p, aspect)
     assertFramed(pose, box, aspect, `p=${p} aspect=${aspect}`)
