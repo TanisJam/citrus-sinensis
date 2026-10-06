@@ -46,15 +46,16 @@ proyecto, "Next fruit", el bucle, el respaldo 2D y la referencia en móvil.
 
 ## Laboratorio 3D (aislado)
 
-Abrí `/lab/tree-3d` o `/lab/tree-3d/` con `pnpm dev`. La raíz conserva el
-ciclo 2D; sólo la ruta del laboratorio carga Three.js **0.185.0**. Requiere WebGL.
+Abrí `/lab/tree-3d` o `/lab/tree-3d/` con `pnpm dev`. Es el banco de pruebas del
+mismo modelo que usa la raíz (que lo carga con su propio motor 3D, arriba);
+Three.js **0.185.0** va en un chunk aparte. Requiere WebGL.
 
 Un naranjo dulce (*Citrus sinensis*) crece en **escala real (metros)** de semilla
 a árbol de diez años mientras bajás: Semilla → Raíces → Brote → Tronco → Ramas →
-Hojas, con textos en el DOM, la edad en el visor y visor fijo. Es geometría
+Copa → Flores → Naranjas, con textos en el DOM, la edad en el visor y visor fijo. Es geometría
 procedural original con medidas y tiempos de fuentes botánicas (ver **Fidelidad
-botánica**), no un modelo adulto escalado; no hay flores, frutos ni exportación. **Recorrido** usa el desplazamiento
-nativo: los seis capítulos están espaciados igual en la página y
+botánica**), no un modelo adulto escalado. **Recorrido** usa el desplazamiento
+nativo: los ocho capítulos están espaciados igual en la página y
 `growthProgress(scroll)` los lleva por tramos lineales a las anclas desiguales de
 `STAGES`, así que cada capítulo empieza exactamente en su etapa y volver hacia
 arriba rebobina. El recorrido se limita al alto real del documento, para que la
@@ -83,7 +84,7 @@ límites, monotonía). `tests/test-scroll-restoration.mjs` es la regresión expl
 en navegador (Vite en 127.0.0.1:5177; `CHROME_PATH` opcional): recarga, historial,
 navegación fresca, primera pose, movimiento reducido y aislamiento de la raíz.
 `pnpm test:browser` (`tests/test-lab-browser.mjs`) levanta su propio Vite y prueba
-en WebGL real, a 1440×900, 390×844 y 390×600: las seis anclas dan seis cuadros
+en WebGL real, a 1440×900, 390×844 y 390×600: las ocho anclas dan ocho cuadros
 distintos y rebobinan exactamente; el final de la página es la planta completa;
 el scroll de ida y vuelta repite el mismo cuadro; Explorar congela crecimiento y
 pose ante el scroll, gira y acerca con teclado; volver a Recorrido sigue la página;
@@ -163,13 +164,24 @@ bloqueó las páginas: **conviene contrastarlas con el texto original**. Lo marc
 | Densidad | ~21.000 hojas vivas a los 10 años, en una capa periférica densa | estimado desde IAF ~3 ([FSHS](https://journals.flvc.org/fshs/article/view/86106)); conteo por árbol *sin fuente* |
 | Raíces | sistema fibroso; pivotante ~0,9 m; 14 laterales someras más allá de la copa ✓; ≥80 % de raíces finas en 40 cm ✓ | [UF/IFAS CG094](https://edis.ifas.ufl.edu/publication/CG094/pdf), [EDIS](https://journals.flvc.org/edis/article/view/130906/138684), [ASHS](https://journals.ashs.org/downloadpdf/view/journals/jashs/100/1/article-p1.pdf) |
 | Corteza | brote liso verde amarillento → gris verdoso; tronco viejo gris pardo | [USPTO PP27144](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/PP27144) (tronco viejo *sin fuente*) |
+| Primera floración | ~9 años desde semilla (juvenilidad de 5–13 años) ✓ | [California Agriculture](https://californiaagriculture.org/api/v1/articles/114495-nuclear-lines-of-citrus-tree-size-yield-and-fruit-characters-of-old-and-young-lines-of-ten-citrus-varieties-compared.pdf); rango de 5–13 años de un resumen secundario, *a contrastar* |
+| Flor | blanca, ~4–5,5 cm, 5 pétalos carnosos, 20–25 estambres amarillos, ovario verde con estilo grueso | [Morton/Purdue](https://www.hort.purdue.edu/newcrop/morton/orange.html), [NCSU](https://plants.ces.ncsu.edu/plants/citrus-x-sinensis/common-name/orange) |
+| Inflorescencia | axilar sobre el brote de primavera; brotes con hojas de una flor (los que más cuajan) y sin hojas de 1–6 | [Lovatt 1984, UCR](https://lovattresearch.ucr.edu/sites/default/files/2019-12/techsyp_lovatt_et_al_1984.pdf), [Agrociencia Uruguay](https://doi.org/10.31285/AGRO.10.938) (flores por racimo *incierto*) |
+| Floración | una sola, intensa, de 2–4 semanas, justo antes y junto con la brotación | [Albrigo, UF/IFAS](https://irrec.ifas.ufl.edu/flcitrus/pdfs/short_course_and_workshop/citrus_flowering_97/Albrigo-Induction_and_Flowering_Processes.pdf), [UF/IFAS CREC](https://crec.ifas.ufl.edu/media/crecifasufledu/extension/extension-publications/2008/Newflushandbloomconsiderations.pdf) |
+| Cuaje y caída | ~6.300 flores en el modelo; caen pétalos y la mayoría de los frutitos; caída de junio 1–2 meses después ✓ | [Davies, UF](https://irrec.ifas.ufl.edu/postharvest/pdfs/short_course_and_workshop/citrus_flowering/Davies-Fruit_Drop_Problems.pdf), [CREC](https://crec.ifas.ufl.edu/media/crecifasufledu/extension/extension-publications/2018/2018_september_fruitdrop.pdf) (un árbol real da 60–200 mil flores: el modelo las reduce por costo) |
+| Desarrollo del fruto | etapa I lenta hasta ~1,5 cm, etapa II de expansión hasta 6,5–9 cm ✓, etapa III sin crecer | [Coggins, UF](https://irrec.ifas.ufl.edu/flcitrus/pdfs/short_course_and_workshop/citrus_flowering/Coggins-Fruit_Development_and_Senescence.pdf), [Morton/Purdue](https://www.hort.purdue.edu/newcrop/morton/orange.html) |
+| Color | verde hasta el viraje con noches frescas (10–15 °C), luego amarillo y naranja | [Frontiers 2022](https://www.frontiersin.org/journals/plant-science/articles/10.3389/fpls.2022.918226/pdf) |
+| Posición | en la periferia de la copa, colgando del extremo de brotes cortos | [Tishreen](https://journal.tishreen.edu.sy/index.php/bioscnc/article/view/6029) (91–95 % en la capa exterior) |
+| Cosecha | ~480 naranjas al décimo año ✓ | [USDA NASS](https://data.nass.usda.gov/Statistics_by_State/Florida/Publications/Citrus/Citrus_Forecast/2009-10/cit1109.pdf) (~510 por Valencia adulta en Florida; sin dato para árboles de semilla) |
 
 Revisión visual: se iteró con capturas de cada etapa, de lejos y de cerca, hasta que
 la copa se leyera como un naranjo (domo denso, verde oscuro, falda baja) y las raíces
 como un sistema fibroso; no se comparó contra fotos de referencia, que el entorno no
 pudo descargar. Simplificaciones conocidas: los brotes jóvenes son tubos redondos (en la planta
-son angulosos); el viento no mueve ramas; no hay flores (un naranjo de semilla tarda
-6–8+ años en florecer) ni frutos; las hojas caen achicándose en el lugar; las
+son angulosos); el viento no mueve ramas; una sola floración y una sola cosecha
+(un Valencia real puede tener dos cosechas colgando a la vez); el árbol tiene ~6.300
+flores en vez de decenas de miles; los frutitos y las hojas caen achicándose en el
+lugar; las
 plántulas hermanas quedan detenidas en vez de morir; la profundidad de raíces
 depende mucho del suelo y del portainjerto (aquí, un suelo profundo y suelto).
 
