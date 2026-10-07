@@ -22,20 +22,21 @@ float noise(vec3 x) {
 float lod(float f, float px) { return 1.0 - smoothstep(0.18, 0.5, f * px); }
 // Signed grain of the soil volume at p, in about [-1, 1], and stones in [0, 1].
 vec3 soilGrain(vec3 p, float px) {
-  float g = 0.0;
-  g += 0.55 * lod(1700.0, px) * (noise(p * 1700.0) - 0.5);
-  g += 0.45 * lod(420.0, px) * (noise(p * 420.0 + 3.1) - 0.5);
-  g += 0.40 * lod(110.0, px) * (noise(p * 110.0 + 7.7) - 0.5);
-  g += 0.35 * lod(28.0, px) * (noise(p * 28.0 + 1.3) - 0.5);
-  g += 0.30 * (noise(p * 6.0 + 5.2) - 0.5);
+  // Octaves below a pixel are skipped, not just weighted to zero.
+  float g = 0.30 * (noise(p * 6.0 + 5.2) - 0.5), w;
+  w = lod(28.0, px); if (w > 0.0) g += 0.35 * w * (noise(p * 28.0 + 1.3) - 0.5);
+  w = lod(110.0, px); if (w > 0.0) g += 0.40 * w * (noise(p * 110.0 + 7.7) - 0.5);
+  w = lod(420.0, px); if (w > 0.0) g += 0.45 * w * (noise(p * 420.0 + 3.1) - 0.5);
+  w = lod(1700.0, px); if (w > 0.0) g += 0.55 * w * (noise(p * 1700.0) - 0.5);
   // Grit and small stones: rare, rounded (two octaves multiplied), each with
   // its own tone.
   // The mask edge is soft and the inside rises to a dome, so a stone reads
   // as a rounded body sitting in the soil, not a flat cut-out.
-  float gv = noise(p * 900.0 + 11.0) * noise(p * 1800.0 + 2.0) * 1.6;
-  float pv = noise(p * 220.0 + 23.0) * noise(p * 440.0 + 5.0) * 1.55;
-  float grit = lod(900.0, px) * smoothstep(0.86, 0.9, gv);
-  float pebble = lod(220.0, px) * smoothstep(0.9, 0.94, pv);
+  float gw = lod(900.0, px), pw = lod(220.0, px), gv = 0.0, pv = 0.0;
+  if (gw > 0.0) gv = noise(p * 900.0 + 11.0) * noise(p * 1800.0 + 2.0) * 1.6;
+  if (pw > 0.0) pv = noise(p * 220.0 + 23.0) * noise(p * 440.0 + 5.0) * 1.55;
+  float grit = gw * smoothstep(0.86, 0.9, gv);
+  float pebble = pw * smoothstep(0.9, 0.94, pv);
   float dome = max(grit * smoothstep(0.86, 1.05, gv), pebble * smoothstep(0.9, 1.1, pv));
   return vec3(g, min(grit + pebble, 1.0), dome);
 }

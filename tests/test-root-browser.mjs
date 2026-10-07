@@ -48,6 +48,9 @@ try {
     check(`3D engine at ${stage.name}`, await engineOf(page), '3d')
     check(`label at ${stage.name}`, (await label(page)).toUpperCase().includes(stage.note.slice(0, 20).toUpperCase()), true)
     if (stage.name === 'Dispersal') {
+      // The label is React's from the first render; bands and rail are written by
+      // the engine's frames, so wait for one.
+      await page.waitForFunction(() => Number(document.querySelector('.band')?.style.opacity) > 0.5, { timeout: 120000 }).catch(() => {})
       check('hero band visible at the start', await page.$eval('.band', el => Number(el.style.opacity) > 0.5), true)
       check('rail dot near the top', await page.$eval('.cycle i', el => parseFloat(el.style.top) < 5), true)
     }
@@ -65,7 +68,8 @@ try {
     await page.waitForFunction(() => !document.querySelector('.tag')?.hasAttribute('inert'), { timeout: 90000 })
     const before = await page.$eval('.tag', el => el.innerText)
     await page.click('.tag button')
-    await page.waitForFunction(text => document.querySelector('.tag')?.innerText !== text, { timeout: 120000 }, before)
+    // The next fruit's canopy frames are slow on software WebGL.
+    await page.waitForFunction(text => document.querySelector('.tag')?.innerText !== text, { timeout: 300000 }, before)
     check('next fruit changes the project', (await page.$eval('.tag', el => el.innerText)).includes('02 / 06'), true)
     check('no page errors after next fruit', errors, [])
     await page.close()
