@@ -52,7 +52,7 @@ export function createSoil() {
   const group = new THREE.Group()
   group.name = 'soil-cutaway'
   const uniforms = {
-    light: { value: 1 }, haze: { value: new THREE.Color() },
+    light: { value: 1 }, haze: { value: new THREE.Color() }, calmBelow: { value: -1 }, calm: { value: 0 },
     cutPoint: { value: new THREE.Vector3() }, cutNormal: { value: new THREE.Vector3(0, 0, 1) },
     top: { value: SOIL_TOP }, sub: { value: SOIL_SUB }, deep: { value: SOIL_DEEP }, stone: { value: STONE },
     dust: { value: DUST }, grass: { value: GRASS },
@@ -65,7 +65,7 @@ export function createSoil() {
   const section = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), new THREE.ShaderMaterial({
     uniforms, vertexShader,
     fragmentShader: /* glsl */ `
-      uniform vec3 top, sub, deep, stone, haze; uniform float light; varying vec3 wp;
+      uniform vec3 top, sub, deep, stone, haze; uniform float light, calmBelow, calm; varying vec3 wp;
       ${NOISE}
       void main() {
         float px = length(fwidth(wp));
@@ -75,6 +75,9 @@ export function createSoil() {
         float wave = 0.04 * (noise(wp * 3.0) - 0.5);
         vec3 c = mix(top, sub, smoothstep(0.08, 0.45, d + wave));
         c = mix(c, deep, smoothstep(0.9, 2.2, d + wave * 3.0));
+        // Under paperless text (tall phones) the earth stays quiet: finer grain, few stones.
+        float quiet = calm * smoothstep(calmBelow + 20.0, calmBelow - 20.0, gl_FragCoord.y);
+        g.x *= 1.0 - 0.6 * quiet; g.y *= 1.0 - 0.85 * quiet;
         c *= 1.0 + 0.55 * g.x;
         // Stones take the soil's tint, darker at the rim, lit on the dome.
         vec3 st = mix(c, stone, 0.55) * (0.6 + 0.55 * g.z) * (0.85 + 0.3 * noise(wp * 700.0));
@@ -115,7 +118,8 @@ export function createSoil() {
 
   const toward = new THREE.Vector3()
   // Face the camera, behind the plant's axis by `back` metres.
-  function update({ camera, target, span, light, haze }) {
+  // calmBelow: device-pixel row (from the bottom) under which text sits; calm: 0..1.
+  function update({ camera, target, span, light, haze, calmBelow = -1, calm = 0 }) {
     toward.set(camera.position.x - target.x, 0, camera.position.z - target.z)
     if (toward.lengthSq() < 1e-12) toward.set(0, 0, 1)
     toward.normalize()
@@ -125,6 +129,8 @@ export function createSoil() {
     section.position.set(-toward.x * back, -20, -toward.z * back)
     section.lookAt(section.position.x + toward.x, -20, section.position.z + toward.z)
     uniforms.light.value = light
+    uniforms.calmBelow.value = calmBelow
+    uniforms.calm.value = calm
     uniforms.haze.value.copy(haze)
   }
   function dispose() {

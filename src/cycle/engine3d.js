@@ -624,7 +624,8 @@ export function createEngine(host) {
     skyUniforms.horizon.value.copy(sky)
     skyUniforms.stars.value = night
     skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night)
-    earth.update({ camera, target: view.target, span, light: 1 - 0.55 * night, haze: sky })
+    earth.update({ camera, target: view.target, span, light: 1 - 0.55 * night, haze: sky,
+      calmBelow: (1 - TEXT_TOP + 0.04) * height * renderer.getPixelRatio(), calm: portrait ? stripBusy : 0 })
     skyDome.position.copy(camera.position)
     skyFog.color.copy(sky)
     const bg = interior > 0.5 ? inside.background : skyFog.color
