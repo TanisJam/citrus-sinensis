@@ -179,9 +179,10 @@ export function createEngine(host) {
   listen('pointermove', e => { pointer.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1) }, { passive: true })
 
   // ---------- Size.
-  let width = 1, height = 1
+  let width = 1, height = 1, portrait = false, stripBusy = 0
   function resize() {
     width = innerWidth; height = innerHeight
+    portrait = height / width > 1.15
     renderer.setPixelRatio(dpr)
     renderer.setSize(width, height, false)
     camera.aspect = insideCamera.aspect = width / height
@@ -220,6 +221,8 @@ export function createEngine(host) {
       fruitMesh.instanceColor.needsUpdate = true
       fruitMesh.instanceMatrix.needsUpdate = true
     }
+    // Leaves in front of the flower close-up step aside while it lasts.
+    plant.fadeLeaves(flowerParted, 1 - T.smooth(T.clamp((pe - 0.556) / 0.02)) * (1 - T.smooth(T.clamp((pe - 0.62) / 0.02))))
     // Leaves in the close-up's path shrink back as the camera comes in, and
     // return when it leaves (or when another orange is the chosen one).
     if (partedFor !== chosenFruit) { if (partedFor >= 0) plant.fadeLeaves(parted[partedFor], 1); partedFor = chosenFruit }
@@ -265,23 +268,48 @@ export function createEngine(host) {
     return out
   }
   const Y_AXIS = new THREE.Vector3(0, 1, 0)
-  const flowerFocus = (() => {
+  // The flower close-up: a cluster on the crown's surface, on the side the
+  // camera sees, with the fewest leaves between it and the lens; those few
+  // are parted like the ones in front of the chosen orange.
+  const flowerFocus = new THREE.Vector3(), flowerParted = []
+  {
     sampleGrowth(topology, progressAtAge(3310), sample)
-    // The densest open cluster on the side the camera sees, at eye height.
+    const at = (arr, i) => v3a.set(arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2])
     const open = []
-    for (let i = 0; i < topology.flowers.length; i++) if (sample.flowerScales[i] > 0) open.push(i)
-    let best = open[0], score = -Infinity
-    const at = i => [sample.flowerPositions[i * 3], sample.flowerPositions[i * 3 + 1], sample.flowerPositions[i * 3 + 2]]
-    for (const i of open) {
-      const [x, y, z] = at(i), r = Math.hypot(x, z) || 1
-      if ((x * facing[0] + z * facing[1]) / r < 0.6 || y < 1.2 || y > 3) continue
-      let near = 0
-      for (const j of open) { const [a, b, c] = at(j); if ((a - x) ** 2 + (b - y) ** 2 + (c - z) ** 2 < 0.04) near++ }
-      const s = near + r * 2
+    for (let i = 0; i < topology.flowers.length; i++) {
+      if (sample.flowerScales[i] <= 0) continue
+      const [x, y, z] = [sample.flowerPositions[i * 3], sample.flowerPositions[i * 3 + 1], sample.flowerPositions[i * 3 + 2]]
+      const r = Math.hypot(x, z) || 1
+      const surface = (x * x + z * z) / CROWN.radius ** 2 + Math.abs((y - CROWN.y) / CROWN.height) ** 2.6
+      if ((x * facing[0] + z * facing[1]) / r < 0.55 || y < 1.4 || y > 3.2 || surface < 0.8) continue
+      open.push(i)
+    }
+    const line = new THREE.Line3(), q = new THREE.Vector3(), out = new THREE.Vector3()
+    let best = -1, score = -Infinity
+    for (const i of open.filter((_, k) => k % Math.max(1, Math.floor(open.length / 160)) === 0)) {
+      const f = at(sample.flowerPositions, i).clone()
+      out.set(f.x, 0, f.z).normalize().add(new THREE.Vector3(0, 0.25, 0)).normalize()
+      line.set(f.clone().addScaledVector(out, 0.04), f.clone().addScaledVector(out, 0.6))
+      let blockers = 0, near = 0
+      for (let k = 0; k < sample.leafCount; k++) {
+        if (sample.leafScales[k] <= 0) continue
+        line.closestPointToPoint(q.fromArray(sample.leafPositions, k * 3), true, v3a)
+        if (v3a.distanceToSquared(q) < 0.006) blockers++
+      }
+      for (const j of open) { const dx = sample.flowerPositions[j * 3] - f.x, dy = sample.flowerPositions[j * 3 + 1] - f.y, dz = sample.flowerPositions[j * 3 + 2] - f.z; if (dx * dx + dy * dy + dz * dz < 0.03) near++ }
+      const s = near - 2.5 * blockers
       if (s > score) { score = s; best = i }
     }
-    return new THREE.Vector3().fromArray(sample.flowerPositions, best * 3)
-  })()
+    if (best >= 0) {
+      flowerFocus.fromArray(sample.flowerPositions, best * 3)
+      out.set(flowerFocus.x, 0, flowerFocus.z).normalize().add(new THREE.Vector3(0, 0.25, 0)).normalize()
+      line.set(flowerFocus.clone().addScaledVector(out, 0.04), flowerFocus.clone().addScaledVector(out, 0.75))
+      for (let k = 0; k < topology.leaves.length; k++) {
+        line.closestPointToPoint(q.fromArray(sample.leafPositions, k * 3), true, v3a)
+        if (v3a.distanceTo(q) < 0.13) flowerParted.push(k)
+      }
+    } else flowerFocus.set(0, CROWN.y, CROWN.radius * 0.9)
+  }
   lastModel = -1
   function closePose(out, point, distance) {
     const out2 = new THREE.Vector3(point.x, 0, point.z).normalize()
@@ -320,7 +348,7 @@ export function createEngine(host) {
     // While the fruit sets and colours, walk up to the crown: the roots drop
     // out of frame and the oranges read at their real size among the leaves.
     if (pe >= 0.632) {
-      const k = T.smooth(T.clamp((pe - 0.64) / 0.06))
+      const k = T.smooth(T.clamp((pe - 0.64) / 0.06)) * (1 - 0.75 * stripBusy)
       if (k > 0) {
         tmpB.target.copy(fitPose.target).setY(T.lerp(fitPose.target.y, CROWN.y, k))
         tmpB.position.subVectors(fitPose.position, fitPose.target).multiplyScalar(1 - 0.48 * k).add(tmpB.target)
@@ -328,8 +356,8 @@ export function createEngine(host) {
       }
     }
     if (pe >= 0.56 && pe < 0.632) {
-      const k = T.smooth(T.clamp((pe - 0.56) / 0.032)) * (1 - T.smooth(T.clamp((pe - 0.6) / 0.032)))
-      return zoomBlend(fitPose, closePose(tmpA, flowerFocus, 0.24), k, pose)
+      const k = T.smooth(T.clamp((pe - 0.56) / 0.032)) * (1 - T.smooth(T.clamp((pe - 0.6) / 0.032))) * (1 - 0.62 * stripBusy)
+      return zoomBlend(fitPose, closePose(tmpA, flowerFocus, 0.34), k, pose)
     }
     if (pe >= 0.786) {
       const i = named[chosenFruit]
@@ -341,10 +369,14 @@ export function createEngine(host) {
   }
 
   // ---------- Day, night, and whether the page sits on dark.
-  const SKY_DAY = new THREE.Color('#dfe7e4'), SKY_DUSK = new THREE.Color('#c99b7a'), SKY_NIGHT = new THREE.Color('#22324a')
-  const ZENITH_DAY = new THREE.Color('#7fa6c6'), ZENITH_NIGHT = new THREE.Color('#0e1a2e')
+  const SKY_DAY = new THREE.Color('#dfe7e4'), SKY_DUSK = new THREE.Color('#c99b7a'), SKY_NIGHT = new THREE.Color('#3a4c68').convertLinearToSRGB()
+  const ZENITH_DAY = new THREE.Color('#7fa6c6'), ZENITH_NIGHT = new THREE.Color('#16233a').convertLinearToSRGB()
   const SUN = new THREE.Color('#fff4da'), MOON = new THREE.Color('#9fb6dd')
   const SOIL = new THREE.Color('#3a2b1e')
+  // As the soil section shows on screen (written without conversion), and the
+  // text strip on tall phones (the same fractions as styles.css).
+  const SOIL_SHOWN = new THREE.Color('#4a3727').convertLinearToSRGB(), stripColor = new THREE.Color()
+  const TEXT_TOP = 0.42, TEXT_BOT = 0.88, PORTRAIT_UP = -0.26, PORTRAIT_ZOOM = 0.58
   const skyFog = new THREE.Fog(SOIL, 25, 85)
   const sky = new THREE.Color()
   const luma = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
@@ -524,29 +556,40 @@ export function createEngine(host) {
     grow(worldPe)
     // The next lap's seed appears only once the released one has reached it.
     if (pe >= 0.93 && pe < T.IN_REL[0] + 0.004) fallingSeed.visible = false
+    // On a tall phone the text has no paper: while a band is up, close-ups
+    // stay outside the crown so the strip under the drawing stays calm.
+    stripBusy = 0
+    if (portrait) for (const b of bands) if (!/\bc\b/.test(b.align ?? '')) stripBusy = Math.max(stripBusy, T.bandAlpha(b, pe))
     const view = direct(worldPe)
     camera.position.copy(view.position)
     camera.lookAt(view.target)
     // Composition: while a text band is up, the subject moves to the free side
     // of the screen (below it on a tall narrow screen) and steps back a
     // little, as a lens shift, so the 3D view itself does not change.
+    // On a tall phone the bands sit in a strip below the drawing, without
+    // paper (see styles.css), so, as in the 2D piece, the subject lives in the
+    // top quarter at half scale, always.
     let fx = 0, fy = 0, room = 0
-    const narrowView = width < 900 && height > 560
-    for (const b of bands) {
-      if (/\bc\b/.test(b.align ?? '')) continue
-      const a = T.bandAlpha(b, pe)
-      if (a <= 0) continue
-      room = Math.max(room, a)
-      if (narrowView) fy += 0.17 * a
-      else fx += (/\br\b/.test(b.align ?? '') ? -0.21 : 0.21) * a
-    }
-    camera.zoom = 1 / (1 + 0.18 * room)
+    if (!portrait) {
+      for (const b of bands) {
+        if (/\bc\b/.test(b.align ?? '')) continue
+        const a = T.bandAlpha(b, pe)
+        if (a <= 0) continue
+        room = Math.max(room, a)
+        fx += (/\br\b/.test(b.align ?? '') ? -0.21 : 0.21) * a
+      }
+    } else fy = PORTRAIT_UP
+    camera.zoom = portrait ? PORTRAIT_ZOOM : 1 / (1 + 0.18 * room)
     if (fx || fy) camera.setViewOffset(width, height, -fx * width, -fy * height, width, height)
     else camera.clearViewOffset()
     const span = view.position.distanceTo(view.target)
     camera.near = Math.max(0.0005, span * 0.02); camera.far = Math.max(span * 4 + 20, 130)
     camera.updateProjectionMatrix()
-    seedCam.aspect = camera.aspect; seedCam.position.copy(seedPose(tmpA, SEED_START).position); seedCam.lookAt(tmpA.target); seedCam.updateProjectionMatrix(); seedCam.updateMatrixWorld()
+    seedCam.aspect = camera.aspect; seedCam.position.copy(seedPose(tmpA, SEED_START).position); seedCam.lookAt(tmpA.target)
+    // The loop's seed is seen through the lap's first camera, framing included.
+    seedCam.zoom = portrait ? PORTRAIT_ZOOM : 1
+    if (portrait) seedCam.setViewOffset(width, height, 0, -PORTRAIT_UP * height, width, height); else seedCam.clearViewOffset()
+    seedCam.updateProjectionMatrix(); seedCam.updateMatrixWorld()
     // Sky by day and night. Underground the camera is in the cut, in front of
     // the section, so there is no switch between sky and soil anywhere.
     sky.copy(SKY_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.35).lerp(SKY_NIGHT, night)
@@ -561,7 +604,15 @@ export function createEngine(host) {
     skyDome.position.copy(camera.position)
     skyFog.color.copy(sky)
     const bg = interior > 0.5 ? inside.background : skyFog.color
-    const l = luma(bg)
+    // What is behind the text: on a tall phone, the strip where the bands sit
+    // (42%-88% of the height), part sky and part soil section.
+    let behind = bg
+    if (portrait && interior < 0.5) {
+      v3.set(view.target.x, 0, view.target.z).project(camera)
+      const line = (1 - v3.y) / 2, skyFrac = T.clamp((line - TEXT_TOP) / (TEXT_BOT - TEXT_TOP))
+      behind = stripColor.copy(SOIL_SHOWN).lerp(bg, skyFrac)
+    }
+    const l = luma(behind)
     const dark = l < 0.42
     brandDark = brandDark ? l < 0.45 : l < 0.39
     navDark = brandDark
