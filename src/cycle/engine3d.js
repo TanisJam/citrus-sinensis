@@ -152,7 +152,7 @@ export function createEngine(host) {
     const line = new THREE.Line3(a, b), q = new THREE.Vector3(), out = []
     for (let k = 0; k < topology.leaves.length; k++) {
       line.closestPointToPoint(q.fromArray(sample.leafPositions, k * 3), true, v3a)
-      if (v3a.distanceTo(q) < 0.16) out.push(k)
+      if (v3a.distanceTo(q) < 0.22) out.push(k)
     }
     return out
   })
@@ -338,7 +338,9 @@ export function createEngine(host) {
     return out
   }
   const pose = { position: new THREE.Vector3(), target: new THREE.Vector3() }
+  let closeK = 0
   function direct(pe) {
+    closeK = 0
     const mp = progressAtAge(T.ageAt(pe))
     if (pe < 0.05) return seedPose(pose, fallingSeed.position.y)
     if (pe < 0.062) return blend(seedPose(tmpA, fallingSeed.position.y), undergroundPose(tmpB), T.smooth((pe - 0.05) / 0.012), pose)
@@ -357,12 +359,14 @@ export function createEngine(host) {
     }
     if (pe >= 0.56 && pe < 0.632) {
       const k = T.smooth(T.clamp((pe - 0.56) / 0.032)) * (1 - T.smooth(T.clamp((pe - 0.6) / 0.032))) * (1 - 0.62 * stripBusy)
+      closeK = k
       return zoomBlend(fitPose, closePose(tmpA, flowerFocus, 0.34), k, pose)
     }
     if (pe >= 0.786) {
       const i = named[chosenFruit]
       fruitPoint.fromArray(sample.fruitPositions, i * 3)
       const k = T.smooth(T.clamp((pe - 0.786) / 0.026))
+      closeK = k
       return zoomBlend(fitPose, closePose(tmpA, fruitPoint, T.lerp(0.55, 0.32, k)), k, pose)
     }
     return blend(fitPose, fitPose, 0, pose)
@@ -428,7 +432,10 @@ export function createEngine(host) {
     // lower, under the stacked labels. Room for the opening rind, then for the row.
     const reach = T.lerp(2.1, narrow ? 2.1 : 2.2, fanned)
     const d = reach / Math.tan(21 * Math.PI / 180) / Math.min(1, insideCamera.aspect) * (narrow ? T.lerp(0.78, 0.92, fanned) : 1)
-    const lookY = narrow ? reach * 0.14 : -reach * 0.1
+    // While the rind opens like a flower the fruit rises a little, so the
+    // petals of peel clear the specimen label below.
+    const peelRoom = T.smooth(T.ramp(pe, T.IN_PEEL)) * (1 - T.smooth(T.ramp(pe, T.IN_EXIT)))
+    const lookY = (narrow ? reach * 0.14 : -reach * 0.1) - reach * 0.16 * peelRoom
     insideCamera.position.set(0, lookY + 0.15, d)
     insideCamera.lookAt(0, lookY, 0)
     insideCamera.updateMatrixWorld()
@@ -579,12 +586,14 @@ export function createEngine(host) {
         room = Math.max(room, a)
         fx += (/\br\b/.test(b.align ?? '') ? -0.21 : 0.21) * a
       }
-    } else fy = PORTRAIT_UP
+    } else fy = PORTRAIT_UP * (1 - closeK) // close-ups centre their subject
     camera.zoom = portrait ? PORTRAIT_ZOOM : 1 / (1 + 0.18 * room)
     if (fx || fy) camera.setViewOffset(width, height, -fx * width, -fy * height, width, height)
     else camera.clearViewOffset()
     const span = view.position.distanceTo(view.target)
-    camera.near = Math.max(0.0005, span * 0.02); camera.far = Math.max(span * 4 + 20, 130)
+    // In a close-up, whatever is closer than ~40% of the way to the subject is
+    // between it and the lens: clip it rather than show a wall of leaves.
+    camera.near = Math.max(0.0005, span * T.lerp(0.02, 0.4, closeK)); camera.far = Math.max(span * 4 + 20, 130)
     camera.updateProjectionMatrix()
     seedCam.aspect = camera.aspect; seedCam.position.copy(seedPose(tmpA, SEED_START).position); seedCam.lookAt(tmpA.target)
     // The loop's seed is seen through the lap's first camera, framing included.

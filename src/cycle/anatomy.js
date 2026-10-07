@@ -133,7 +133,8 @@ export function createAnatomy() {
 
   // Rind and pith: lunes that hinge open from the stylar (bottom) pole.
   const shell = (radius, thickness, material) => Array.from({ length: LUNES }, (_, k) => {
-    const a0 = k * Math.PI * 2 / LUNES, a1 = (k + 1) * Math.PI * 2 / LUNES
+    // Half a lune of offset: a lune's middle, not a seam between two, faces the viewer.
+    const a0 = (k + 0.5) * Math.PI * 2 / LUNES, a1 = (k + 1.5) * Math.PI * 2 / LUNES
     const pivot = new THREE.Group()
     pivot.position.set(0, -radius, 0)
     const mesh = new THREE.Mesh(own(luneGeometry(a0, a1, radius, thickness)), material)
@@ -196,9 +197,10 @@ export function createAnatomy() {
     const peel = ease(state.peel), exit = ease(state.exit)
     for (const lune of flavedo) {
       lune.pivot.rotation.set(0, 0, 0)
-      lune.pivot.rotateOnAxis(new THREE.Vector3(Math.sin(lune.mid), 0, -Math.cos(lune.mid)), -peel * 1.35)
+      lune.pivot.rotateOnAxis(new THREE.Vector3(Math.sin(lune.mid), 0, -Math.cos(lune.mid)), -peel * 1.05)
       // Out sideways and back, away from the viewer and the labels.
-      lune.pivot.position.set(Math.cos(lune.mid) * exit * 4, -1 - exit * 0.6, Math.sin(lune.mid) * exit * 4 - exit * 2)
+      // Up, out and back: the opened rind lifts away from the labels below.
+      lune.pivot.position.set(Math.cos(lune.mid) * exit * 4, -1 + exit * 1.6, Math.sin(lune.mid) * exit * 4 - exit * 2.5)
       lune.pivot.visible = exit < 0.6
     }
     // Gone before the pieces can overlap as ghosts.
