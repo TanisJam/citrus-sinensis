@@ -302,6 +302,19 @@ export function createEngine(host) {
     out.target.lerpVectors(a.target, b.target, t)
     return out
   }
+  // Diving onto a point: the distance changes at a constant rate (the image
+  // grows evenly instead of rushing at the end), and the aim follows the zoom.
+  const za = new THREE.Vector3(), zb = new THREE.Vector3()
+  function zoomBlend(a, b, t, out) {
+    za.subVectors(a.position, a.target); zb.subVectors(b.position, b.target)
+    const la = Math.max(1e-4, za.length()), lb = Math.max(1e-4, zb.length())
+    const d = Math.exp(T.lerp(Math.log(la), Math.log(lb), t))
+    const s = Math.abs(la - lb) < 1e-6 ? t : T.clamp((la - d) / (la - lb))
+    out.target.lerpVectors(a.target, b.target, s)
+    za.divideScalar(la).lerp(zb.divideScalar(lb), s).normalize()
+    out.position.copy(out.target).addScaledVector(za, d)
+    return out
+  }
   const pose = { position: new THREE.Vector3(), target: new THREE.Vector3() }
   function direct(pe) {
     const mp = progressAtAge(T.ageAt(pe))
@@ -321,14 +334,14 @@ export function createEngine(host) {
       }
     }
     if (pe >= 0.56 && pe < 0.632) {
-      const k = T.smooth(T.clamp((pe - 0.56) / 0.025)) * (1 - T.smooth(T.clamp((pe - 0.607) / 0.025)))
-      return blend(fitPose, closePose(tmpA, flowerFocus, 0.24), k, pose)
+      const k = T.smooth(T.clamp((pe - 0.56) / 0.032)) * (1 - T.smooth(T.clamp((pe - 0.6) / 0.032)))
+      return zoomBlend(fitPose, closePose(tmpA, flowerFocus, 0.24), k, pose)
     }
     if (pe >= 0.786) {
       const i = named[chosenFruit]
       fruitPoint.fromArray(sample.fruitPositions, i * 3)
       const k = T.smooth(T.clamp((pe - 0.786) / 0.026))
-      return blend(fitPose, closePose(tmpA, fruitPoint, T.lerp(0.55, 0.32, k)), k, pose)
+      return zoomBlend(fitPose, closePose(tmpA, fruitPoint, T.lerp(0.55, 0.32, k)), k, pose)
     }
     return blend(fitPose, fitPose, 0, pose)
   }
@@ -485,7 +498,7 @@ export function createEngine(host) {
   const seedCam = new THREE.PerspectiveCamera(42, 1, 0.001, 10)
 
   // ---------- Frame loop.
-  let rafId = 0, prevT = 0, alive = true, frameMs = 16, slow = 0, drops = 0
+  let rafId = 0, prevT = 0, alive = true, frameMs = 16, slow = 0, drops = 0, nightShown = 0, prevNightT = 0
   function frame(now) {
     if (!alive) return
     const t0 = performance.now()
@@ -501,7 +514,12 @@ export function createEngine(host) {
     const inst = skipV ? 0 : Math.abs(p - pPrev) / Math.max(1e-4, dt)
     skipV = false; pPrev = p
     scrollV = REDUCED ? 0 : T.lerp(scrollV, inst, 1 - Math.pow(0.05, dt))
-    const night = T.nightAt(pe, T.calmAt(scrollV))
+    // Night eases over time (~1/3 s), so a dawn never lands inside one frame
+    // however fast the page is scrolled.
+    const nightNow = T.nightAt(pe, T.calmAt(scrollV))
+    nightShown = REDUCED || !prevNightT ? nightNow : T.lerp(nightShown, nightNow, 1 - Math.exp(-dt / 0.33))
+    prevNightT = 1
+    const night = nightShown
     const orange = T.orangeAt(pe)
     const interior = T.interiorAt(pe)
 
