@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { addRindGlands } from '../lab/growth-renderer.js'
 
 // The opened orange of the climax, in its own unit space: fruit centre at the
 // origin, radius 1, stem end toward +Y. Anatomy, outside in: the flavedo (the
@@ -12,8 +13,8 @@ const T = (a, b, t) => a + (b - a) * t
 
 // One spherical lune of a shell between two angles around Y.
 function luneGeometry(a0, a1, radius, thickness) {
-  const geometry = new THREE.SphereGeometry(radius, 10, 18, a0, a1 - a0, 0, Math.PI)
-  const inner = new THREE.SphereGeometry(radius - thickness, 10, 18, a0, a1 - a0, 0, Math.PI)
+  const geometry = new THREE.SphereGeometry(radius, 14, 28, a0, a1 - a0, 0, Math.PI)
+  const inner = new THREE.SphereGeometry(radius - thickness, 14, 28, a0, a1 - a0, 0, Math.PI)
   inner.index.array.reverse()
   const merged = mergeGeometries([geometry, inner])
   geometry.dispose(); inner.dispose()
@@ -85,6 +86,19 @@ function carpelHalfGeometry(a0, a1, inner, outer, juice) {
   return geometry
 }
 
+// A citrus seed: plump, wedge-ovoid, one end pointed (the micropyle), with a
+// slight crease along one side.
+function seedShape() {
+  const g = new THREE.SphereGeometry(1, 16, 12), p = g.attributes.position, v = new THREE.Vector3()
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i)
+    const taper = v.y > 0 ? 1 - 0.45 * v.y * v.y : 1 - 0.08 * v.y * v.y
+    p.setXYZ(i, v.x * taper * (1 - 0.06 * Math.max(0, v.z)), v.y, v.z * taper)
+  }
+  g.computeVertexNormals()
+  return g
+}
+
 export function createAnatomy() {
   const group = new THREE.Group()
   group.name = 'orange-anatomy'
@@ -92,10 +106,28 @@ export function createAnatomy() {
   group.add(body)
   const owned = new Set()
   const own = x => { owned.add(x); return x }
-  const flavedoMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf08a12, roughness: 0.55, transparent: true }))
+  const flavedoMaterial = own(addRindGlands(new THREE.MeshStandardMaterial({ color: 0xf08a12, roughness: 0.5, transparent: true })))
   const pithMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf6efdc, roughness: 0.95, transparent: true }))
   // One material per carpel: the unnamed ones and, later, the unchosen ones fade alone.
-  const carpelMaterials = Array.from({ length: CARPELS }, () => own(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, transparent: true })))
+  // Juice vesicles: long sacs fanning out from the axis, each catching light on
+  // its own, under a thin glossy membrane. Drawn in the carpel's own frame.
+  const vesicles = shader => {
+    shader.vertexShader = 'varying vec3 vLocal;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvLocal = position;')
+    shader.fragmentShader = 'varying vec3 vLocal;\nfloat vh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      // Long spindles converging on the axis, staggered along their length.
+      float rr = length(vLocal.xz), aa = atan(vLocal.z, vLocal.x) + 0.35 * vLocal.y;
+      float lane = aa * 150.0 + 1.6 * sin(rr * 21.0 + aa * 40.0);
+      float id = floor(lane / 6.2831853);
+      float along = 0.5 + 0.5 * sin(rr * 34.0 + id * 2.7);
+      float sac = pow(0.5 + 0.5 * sin(lane), 0.7) * (0.55 + 0.45 * along);
+      diffuseColor.rgb *= 0.86 + 0.16 * sac + 0.06 * (vh(vec2(id, floor(rr * 10.0))) - 0.5);
+      diffuseColor.rgb += 0.05 * pow(sac, 8.0) * vec3(1.0, 0.85, 0.5);`)
+  }
+  const carpelMaterials = Array.from({ length: CARPELS }, () => {
+    const m = own(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, clearcoat: 0.6, clearcoatRoughness: 0.25, transparent: true }))
+    m.onBeforeCompile = vesicles
+    return m
+  })
   const seedMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf2e8cc, roughness: 0.7, transparent: true }))
   const juice = new THREE.Color(0xf07f0c)
 
@@ -112,6 +144,8 @@ export function createAnatomy() {
   })
   const flavedo = shell(1, 0.05, flavedoMaterial)
   const albedo = shell(0.95, 0.07, pithMaterial)
+  // A transparent piece must not hide what is behind it.
+  for (const m of [flavedoMaterial, pithMaterial]) m.side = THREE.DoubleSide
 
   // Carpels: each wedge is two halves, so the chosen one can open on its seed.
   const carpels = Array.from({ length: CARPELS }, (_, k) => {
@@ -131,10 +165,10 @@ export function createAnatomy() {
     })
     // ~1 cm in a ~7.5 cm fruit: about a quarter of the radius. Two per
     // carpel, along its inner angle; the first is the one that leaves.
-    const seedGeometry = own(new THREE.SphereGeometry(1, 12, 8))
+    const seedGeometry = own(seedShape())
     const seeds = [0.42, 0.62].map(r => {
       const seed = new THREE.Mesh(seedGeometry, seedMaterial)
-      seed.scale.set(0.07, 0.13, 0.05)
+      seed.scale.set(0.075, 0.13, 0.06)
       seed.position.set(Math.cos(mid) * r, 0.05, Math.sin(mid) * r)
       seed.rotation.set(0, -mid, Math.PI / 2)
       seed.visible = false
@@ -162,20 +196,22 @@ export function createAnatomy() {
     const peel = ease(state.peel), exit = ease(state.exit)
     for (const lune of flavedo) {
       lune.pivot.rotation.set(0, 0, 0)
-      lune.pivot.rotateOnAxis(new THREE.Vector3(Math.sin(lune.mid), 0, -Math.cos(lune.mid)), -peel * 1.9)
-      lune.pivot.position.set(Math.cos(lune.mid) * exit * 2.2, -1 - exit * 1.4, Math.sin(lune.mid) * exit * 2.2)
-      lune.pivot.visible = exit < 1
+      lune.pivot.rotateOnAxis(new THREE.Vector3(Math.sin(lune.mid), 0, -Math.cos(lune.mid)), -peel * 1.35)
+      // Out sideways and back, away from the viewer and the labels.
+      lune.pivot.position.set(Math.cos(lune.mid) * exit * 4, -1 - exit * 0.6, Math.sin(lune.mid) * exit * 4 - exit * 2)
+      lune.pivot.visible = exit < 0.6
     }
-    setOpacity(flavedoMaterial, 1 - exit)
+    // Gone before the pieces can overlap as ghosts.
+    setOpacity(flavedoMaterial, 1 - Math.min(1, exit / 0.6))
     // Turned to the cross-section, the white pith tears away in strips.
     const bare = ease(state.bare)
     for (const lune of albedo) {
       lune.pivot.rotation.set(0, 0, 0)
       lune.pivot.rotateOnAxis(new THREE.Vector3(Math.sin(lune.mid), 0, -Math.cos(lune.mid)), -bare * 1.4)
-      lune.pivot.position.set(Math.cos(lune.mid) * bare * 1.8, -0.95 - bare * 0.6, Math.sin(lune.mid) * bare * 1.8)
-      lune.pivot.visible = bare < 1
+      lune.pivot.position.set(Math.cos(lune.mid) * bare * 2.6, -0.95 - bare * 1.2, Math.sin(lune.mid) * bare * 2.6)
+      lune.pivot.visible = bare < 0.4
     }
-    setOpacity(pithMaterial, 1 - bare)
+    setOpacity(pithMaterial, 1 - Math.min(1, bare / 0.4))
     // Side view to cross-section: the stem end turns toward the viewer.
     body.rotation.set(ease(state.turn) * Math.PI / 2, 0, 0)
     // The carpels leave the rosette for a row across the plate, as in the 2D

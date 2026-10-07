@@ -494,7 +494,8 @@ export function createEngine(host) {
         gajo.seeds.map(s => `<div style="font-weight:600;letter-spacing:.08em;margin-top:4px">${IDEAS[s]}</div>`).join('')
       Object.assign(ideasBox.style, { left: '50%', top: narrow ? '150px' : '76%', transform: 'translateX(-50%)', textAlign: 'center', width: 'max-content', maxWidth: narrow ? 'calc(100vw - 40px)' : '34ch',
         opacity: T.lerp(0.45 * fanned, 1, opened).toFixed(2) })
-      const namesOn = fanned * (1 - 0.6 * opened)
+      // Names only once the row has formed: mid-flight they would pile up.
+      const namesOn = T.smooth(T.clamp((fanned - 0.7) / 0.3)) * (1 - 0.6 * opened)
       names.forEach((el, k) => {
         el.style.display = k < gajos.length ? 'block' : 'none'
         if (k >= gajos.length) return

@@ -140,6 +140,29 @@ function fruitGeometry() {
   return geometry
 }
 
+// Orange rind up close: a dense field of sunken oil glands (each a small pit
+// with a lit rim), drawn per pixel in the fruit's own unit-sphere frame and
+// faded out when a gland is smaller than a pixel.
+export function addRindGlands(material) {
+  const before = material.onBeforeCompile
+  material.onBeforeCompile = (shader, renderer) => {
+    before?.call(material, shader, renderer)
+    shader.vertexShader = 'varying vec3 vRind;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRind = normalize(position);')
+    shader.fragmentShader = 'varying vec3 vRind;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        vec3 q = vRind * 40.0;
+        vec3 id = floor(q), f = fract(q) - 0.5;
+        vec3 j = fract(sin(vec3(dot(id, vec3(127.1, 311.7, 74.7)), dot(id, vec3(269.5, 183.3, 246.1)), dot(id, vec3(113.5, 271.9, 124.6)))) * 43758.5453) - 0.5;
+        float d = length(f - 0.3 * j);
+        float px = length(fwidth(q));
+        float seen = 1.0 - smoothstep(0.35, 0.8, px);
+        float pit = 1.0 - smoothstep(0.12, 0.26, d), rim = smoothstep(0.18, 0.28, d) * (1.0 - smoothstep(0.28, 0.4, d));
+        diffuseColor.rgb *= 1.0 - seen * (0.24 * pit - 0.1 * rim);
+      }`)
+  }
+  return material
+}
+
 const color = hex => new THREE.Color(hex)
 // Green fruit, the colour break (chlorophyll gone, carotenoids showing), ripe orange.
 const FRUIT_GREEN = color(0x4b7a24), FRUIT_BREAK = color(0xc9a42a), FRUIT_RIPE = color(0xf08a12)
@@ -193,7 +216,7 @@ export function createGrowthRenderer(topology) {
   leaves.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(topology.leaves.length * 3), 3).setUsage(THREE.DynamicDrawUsage)
   const buds = add('flower-buds', new THREE.SphereGeometry(1, 8, 6), material({ color: 0xf3efdd, roughness: 0.55 }), topology.flowers.length)
   const flowers = add('flowers', flowerGeometry(), material({ vertexColors: true, roughness: 0.5, side: THREE.DoubleSide }), topology.flowers.length)
-  const fruits = add('fruits', fruitGeometry(), material({ color: 0xffffff, vertexColors: true, roughness: 0.55 }), topology.fruits.length)
+  const fruits = add('fruits', fruitGeometry(), addRindGlands(material({ color: 0xffffff, vertexColors: true, roughness: 0.5 })), topology.fruits.length)
   // Each fruit hangs on its stalk (the old pedicel) and keeps a green calyx at the top.
   const stalkGeometry = new THREE.CylinderGeometry(1, 1.3, 1, 6, 1, true).translate(0, -0.5, 0)
   const stalks = add('fruit-stalks', stalkGeometry, material({ color: 0x6b7a3a, roughness: 0.7 }), topology.fruits.length)
