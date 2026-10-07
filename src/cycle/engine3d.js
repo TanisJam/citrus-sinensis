@@ -5,6 +5,7 @@ import { createGrowthTopology, createGrowthSample, sampleGrowth, progressAtAge, 
 import { createGrowthRenderer } from '../lab/growth-renderer.js'
 import { sampleGrowthCamera } from '../lab/camera-timeline.js'
 import { createAnatomy } from './anatomy.js'
+import { createSoil } from './soil.js'
 
 // The cycle, in 3D: same contract as the 2D engine (createEngine(host) ->
 // home/pick/state/destroy, onHud deltas, onAccent, onTick(pe, night, interior,
@@ -45,17 +46,10 @@ export function createEngine(host) {
   skyDome.renderOrder = -2
   skyDome.frustumCulled = false
   world.add(skyDome)
-  // Ground to the horizon: translucent near the trunk, so the roots read through
-  // the soil as in a cut, opaque further out, fading into the sky with distance.
-  const groundUniforms = { soil: { value: new THREE.Color('#b9a785') }, haze: { value: new THREE.Color() }, light: { value: 1 }, alpha: { value: 1 } }
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 64), new THREE.ShaderMaterial({
-    uniforms: groundUniforms, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    vertexShader: 'varying vec2 g; void main(){ g = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
-    fragmentShader: 'uniform vec3 soil, haze; uniform float light, alpha; varying vec2 g; void main(){ float r = length(g); float a = mix(.5, 1., smoothstep(3.5, 8., r)) * alpha; gl_FragColor = vec4(mix(soil * light, haze, smoothstep(12., 55., r)), a); }',
-  }))
-  ground.rotation.x = -Math.PI / 2
-  ground.position.y = -0.0005
-  world.add(ground)
+  // The ground, as a cutaway: roots against a section of earth, the surface
+  // carrying on behind it (./soil.js).
+  const earth = createSoil()
+  world.add(earth.group)
   const topology = createGrowthTopology(20260807)
   const sample = createGrowthSample(topology)
   const plant = createGrowthRenderer(topology)
@@ -533,30 +527,39 @@ export function createEngine(host) {
     const view = direct(worldPe)
     camera.position.copy(view.position)
     camera.lookAt(view.target)
+    // Composition: while a text band is up, the subject moves to the free side
+    // of the screen (below it on a tall narrow screen) and steps back a
+    // little, as a lens shift, so the 3D view itself does not change.
+    let fx = 0, fy = 0, room = 0
+    const narrowView = width < 900 && height > 560
+    for (const b of bands) {
+      if (/\bc\b/.test(b.align ?? '')) continue
+      const a = T.bandAlpha(b, pe)
+      if (a <= 0) continue
+      room = Math.max(room, a)
+      if (narrowView) fy += 0.17 * a
+      else fx += (/\br\b/.test(b.align ?? '') ? -0.21 : 0.21) * a
+    }
+    camera.zoom = 1 / (1 + 0.18 * room)
+    if (fx || fy) camera.setViewOffset(width, height, -fx * width, -fy * height, width, height)
+    else camera.clearViewOffset()
     const span = view.position.distanceTo(view.target)
     camera.near = Math.max(0.0005, span * 0.02); camera.far = Math.max(span * 4 + 20, 130)
     camera.updateProjectionMatrix()
     seedCam.aspect = camera.aspect; seedCam.position.copy(seedPose(tmpA, SEED_START).position); seedCam.lookAt(tmpA.target); seedCam.updateProjectionMatrix(); seedCam.updateMatrixWorld()
-    // Sky by day and night; the soil while the camera is in it. Going in and
-    // coming out are dissolves over time (not a switch at the plane), and the
-    // ground plane thins out as the camera passes through it, so no frame
-    // swaps sky for soil at once.
+    // Sky by day and night. Underground the camera is in the cut, in front of
+    // the section, so there is no switch between sky and soil anywhere.
     sky.copy(SKY_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.35).lerp(SKY_NIGHT, night)
-    const soil = worldPe < 0.05 ? 0 : worldPe < 0.25 ? T.smooth(T.clamp((worldPe - 0.05) / 0.012)) : 1 - T.smooth(T.clamp((worldPe - 0.25) / 0.04))
     world.background = null
-    skyDome.visible = true
     world.fog = skyFog
-    skyFog.near = T.lerp(25, span * 0.8, soil); skyFog.far = T.lerp(85, span * 3, soil)
-    groundUniforms.alpha.value = T.smooth(T.clamp(Math.abs(camera.position.y) / Math.max(0.004, span * 0.08)))
     // Moonlight keeps the tree legible at night, blue and dim.
     hemi.intensity = 2.2 * (1 - 0.38 * night); sun.intensity = 2.4 * (1 - 0.3 * night)
     sun.color.copy(SUN).lerp(MOON, night)
-    skyUniforms.horizon.value.copy(sky).lerp(SOIL, soil)
-    skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night).lerp(SOIL, soil)
-    groundUniforms.haze.value.copy(sky)
-    groundUniforms.light.value = 1 - 0.62 * night
+    skyUniforms.horizon.value.copy(sky)
+    skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night)
+    earth.update({ camera, target: view.target, span, light: 1 - 0.55 * night, haze: sky })
     skyDome.position.copy(camera.position)
-    skyFog.color.copy(sky).lerp(SOIL, soil)
+    skyFog.color.copy(sky)
     const bg = interior > 0.5 ? inside.background : skyFog.color
     const l = luma(bg)
     const dark = l < 0.42
@@ -607,7 +610,7 @@ export function createEngine(host) {
       for (const [type, fn, opts] of listeners) removeEventListener(type, fn, opts)
       listeners.length = 0
       overlay.remove()
-      plant.dispose(); anatomy.dispose()
+      plant.dispose(); anatomy.dispose(); earth.dispose()
       fallingSeed.geometry.dispose(); fallingSeedMaterial.dispose()
       quad.geometry.dispose(); plateMaterial.dispose()
       renderer.dispose()

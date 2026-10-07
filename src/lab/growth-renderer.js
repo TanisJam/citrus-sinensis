@@ -4,6 +4,7 @@ import { CROWN, SEED_SIZE, createGrowthSample, sampleGrowth } from './growth-mod
 // Original meshes; straight centerlines preserve every authored attachment.
 const SIDES = 8
 const STRIDE = SIDES * 2 + 2
+export const CAP = 0.85
 
 function tubeGeometry(count) {
   const geometry = new THREE.BufferGeometry()
@@ -45,11 +46,14 @@ function leafGeometry() {
     half *= 1 + 0.025 * Math.sin(u * 44) // crenulate margin
     rows.push([t, j === 10 ? 0 : half])
   }
-  const positions = [], indices = []
+  const positions = [], colors = [], indices = []
   for (const [t, half] of rows) {
     for (const a of ACROSS) {
       // Halves rise from a sunken midrib; the blade arches down toward the tip.
       positions.push(a * half, t, 0.15 * Math.abs(a * half) - 0.09 * t * t)
+      // Shading: a pale midrib fading to a darker margin; petiole a touch paler.
+      const k = a === 0 ? (t <= PETIOLE ? 1.2 : 1.32) : 0.86
+      colors.push(k, k, k * (a === 0 ? 0.92 : 1))
     }
   }
   for (let r = 0; r < rows.length - 1; r++) {
@@ -60,6 +64,7 @@ function leafGeometry() {
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   geometry.computeBoundingBox()
@@ -118,12 +123,18 @@ function flowerGeometry() {
 // Sweet orange: near-spherical, slightly flattened, with a pebbly rind of oil glands.
 function fruitGeometry() {
   const geometry = new THREE.SphereGeometry(1, 28, 20)
-  const position = geometry.attributes.position, v = new THREE.Vector3()
+  const position = geometry.attributes.position, v = new THREE.Vector3(), colors = []
   for (let i = 0; i < position.count; i++) {
     v.fromBufferAttribute(position, i)
-    const pebble = 1 + 0.008 * Math.sin(v.x * 61 + v.y * 37) * Math.sin(v.y * 53 - v.z * 41) * Math.sin(v.z * 47 + v.x * 29)
+    const glands = Math.sin(v.x * 61 + v.y * 37) * Math.sin(v.y * 53 - v.z * 41) * Math.sin(v.z * 47 + v.x * 29)
+    const pebble = 1 + 0.008 * glands
     position.setXYZ(i, v.x * pebble, v.y * pebble * 0.95, v.z * pebble)
+    // Oil glands catch the light; the stem end stays a little greener and the
+    // stylar end has its small darker scar.
+    const k = 1 + 0.06 * glands - 0.1 * Math.max(0, v.y - 0.82) / 0.18 - 0.18 * Math.max(0, -v.y - 0.95) / 0.05
+    colors.push(k * (1 - 0.05 * Math.max(0, v.y - 0.7)), k, k * (1 - 0.1 * Math.max(0, v.y - 0.7)))
   }
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
   return geometry
@@ -158,7 +169,7 @@ export function createGrowthRenderer(topology) {
   const woodNodes = topology.nodes.filter(node => node.kind === 'wood')
   const roots = add('roots', tubeGeometry(rootNodes.length), material({ vertexColors: true, roughness: 0.95 }))
   const wood = add('wood', tubeGeometry(woodNodes.length), material({ vertexColors: true, roughness: 0.85 }))
-  const leafSurface = material({ color: 0xffffff, roughness: 0.38, side: THREE.DoubleSide })
+  const leafSurface = material({ color: 0xffffff, vertexColors: true, roughness: 0.38, side: THREE.DoubleSide })
   // Wind (see updateWind) rotates each blade about its petiole on the GPU; the
   // underside is paler and matte.
   const wind = { time: { value: 0 }, strength: { value: 0 } }
@@ -182,16 +193,20 @@ export function createGrowthRenderer(topology) {
   leaves.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(topology.leaves.length * 3), 3).setUsage(THREE.DynamicDrawUsage)
   const buds = add('flower-buds', new THREE.SphereGeometry(1, 8, 6), material({ color: 0xf3efdd, roughness: 0.55 }), topology.flowers.length)
   const flowers = add('flowers', flowerGeometry(), material({ vertexColors: true, roughness: 0.5, side: THREE.DoubleSide }), topology.flowers.length)
-  const fruits = add('fruits', fruitGeometry(), material({ color: 0xffffff, roughness: 0.55 }), topology.fruits.length)
+  const fruits = add('fruits', fruitGeometry(), material({ color: 0xffffff, vertexColors: true, roughness: 0.55 }), topology.fruits.length)
+  // Each fruit hangs on its stalk (the old pedicel) and keeps a green calyx at the top.
+  const stalkGeometry = new THREE.CylinderGeometry(1, 1.3, 1, 6, 1, true).translate(0, -0.5, 0)
+  const stalks = add('fruit-stalks', stalkGeometry, material({ color: 0x6b7a3a, roughness: 0.7 }), topology.fruits.length)
+  const calyces = add('fruit-calyces', new THREE.SphereGeometry(1, 10, 5).scale(1, 0.4, 1), material({ color: 0x55702c, roughness: 0.6 }), topology.fruits.length)
   fruits.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(topology.fruits.length * 3), 3).setUsage(THREE.DynamicDrawUsage)
-  for (const mesh of [buds, flowers, fruits]) {
+  for (const mesh of [buds, flowers, fruits, stalks, calyces]) {
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     mesh.boundingBox = new THREE.Box3()
     mesh.boundingSphere = new THREE.Sphere()
   }
   // Seed: buried cotyledons inside a creamy, split seed coat.
   const reserve = add('seed-reserve', new THREE.SphereGeometry(1, 16, 12), material({ color: 0xf4ecd4, roughness: 0.8 }))
-  const shellMaterial = material({ color: 0xe6d9b8, roughness: 0.95, side: THREE.DoubleSide })
+  const shellMaterial = material({ color: 0xf2e8cc, roughness: 0.9, side: THREE.DoubleSide })
   const shells = [0, 1].map(index => add(`seed-shell-${index}`, new THREE.SphereGeometry(1, 16, 12, index * Math.PI, Math.PI), shellMaterial))
   const soil = add('soil', new THREE.PlaneGeometry(9, 9), material({ color: 0xd2c2a4, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }))
   soil.rotation.x = -Math.PI / 2
@@ -253,7 +268,10 @@ export function createGrowthRenderer(topology) {
           normals.setXYZ(vertex, normal.x, normal.y, normal.z)
           colors.setXYZ(vertex, tint.r, tint.g, tint.b)
         }
-        positions.setXYZ(base + SIDES * 2 + ring, center.x, center.y, center.z)
+        // Domed ends: the cap's centre stands out along the axis, so a growing
+        // tip is blunt and rounded, never a cut or a needle (joints hide it).
+        const dome = length > 0 ? (ring ? 1 : -1) * radius * CAP : 0
+        positions.setXYZ(base + SIDES * 2 + ring, center.x + direction.x * dome, center.y + direction.y * dome, center.z + direction.z * dome)
         normal.copy(up).multiplyScalar(ring ? 1 : -1).applyQuaternion(rotation)
         normals.setXYZ(base + SIDES * 2 + ring, normal.x, normal.y, normal.z)
         colors.setXYZ(base + SIDES * 2 + ring, tint.r, tint.g, tint.b)
@@ -349,8 +367,17 @@ export function createGrowthRenderer(topology) {
       flowers.setMatrixAt(i, matrix.compose(start, rotation, scale.setScalar(sample.flowerScales[i])))
     }
     for (let i = 0; i < topology.fruits.length; i++) {
-      matrix.compose(start.fromArray(sample.fruitPositions, i * 3), rotation.identity(), scale.setScalar(sample.fruitScales[i]))
+      const r = sample.fruitScales[i]
+      matrix.compose(start.fromArray(sample.fruitPositions, i * 3), rotation.identity(), scale.setScalar(r))
       fruits.setMatrixAt(i, matrix)
+      // From the twig (where the flower was) down into the top of the fruit.
+      const f = topology.fruits[i].flower
+      end.fromArray(sample.flowerPositions, f * 3)
+      const stalk = Math.max(0, end.y - (start.y + r * 0.9))
+      const thick = r > 0 ? 0.0012 + 0.012 * r : 0
+      stalks.setMatrixAt(i, matrix.compose(end, rotation, scale.set(thick, stalk, thick)))
+      start.y += r * 0.94
+      calyces.setMatrixAt(i, matrix.compose(start, rotation, scale.setScalar(r * 0.16)))
       const c = sample.fruitColors[i]
       tint.copy(FRUIT_GREEN).lerp(FRUIT_BREAK, Math.min(1, c * 2)).lerp(FRUIT_RIPE, Math.max(0, c * 2 - 1))
       fruits.instanceColor.setXYZ(i, tint.r, tint.g, tint.b)
@@ -358,8 +385,8 @@ export function createGrowthRenderer(topology) {
     // Outside the bloom and fruit windows these meshes draw nothing at all.
     buds.count = sample.budScales.some(v => v > 0) ? topology.flowers.length : 0
     flowers.count = sample.flowerScales.some(v => v > 0) ? topology.flowers.length : 0
-    fruits.count = sample.fruitScales.some(v => v > 0) ? topology.fruits.length : 0
-    for (const mesh of [buds, flowers, fruits]) {
+    fruits.count = stalks.count = calyces.count = sample.fruitScales.some(v => v > 0) ? topology.fruits.length : 0
+    for (const mesh of [buds, flowers, fruits, stalks, calyces]) {
       mesh.instanceMatrix.needsUpdate = true
       setBounds(mesh.boundingBox, mesh.boundingSphere)
     }
@@ -370,9 +397,13 @@ export function createGrowthRenderer(topology) {
     reserve.visible = sample.seed[0] > 0
     for (let i = 0; i < shells.length; i++) {
       const shell = shells[i], fraction = sample.seed[1]
+      // The coat splits along its seam from the micropylar (lower) end, where
+      // the radicle pushes out: the halves gape below and stay joined above.
+      const open = (i ? 1 : -1) * 0.32 * sample.seed[2], top = h * fraction
+      shell.rotation.x = open
       shell.position.fromArray(sample.seedPosition)
-      // The coat splits along its seam as the radicle pushes out.
-      shell.position.z += (i ? -1 : 1) * d * sample.seed[2] * 0.35
+      shell.position.y += top - top * Math.cos(open)
+      shell.position.z -= top * Math.sin(open)
       shell.scale.set(w, h, d).multiplyScalar(fraction)
       shell.visible = fraction > 0
     }
@@ -382,7 +413,7 @@ export function createGrowthRenderer(topology) {
   function dispose() {
     if (disposed) return
     disposed = true
-    for (const mesh of [leaves, thorns, buds, flowers, fruits]) mesh.dispose()
+    for (const mesh of [leaves, thorns, buds, flowers, fruits, stalks, calyces]) mesh.dispose()
     for (const geometry of geometries) geometry.dispose()
     for (const surface of materials) surface.dispose()
     group.removeFromParent()

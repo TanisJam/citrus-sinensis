@@ -109,7 +109,7 @@ export function Ciclo() {
        2D, que tiene el mismo contrato. `?engine=2d` lo fuerza. */
     const options = {
       canvas: canvasRef.current,
-      bands: BANDS.map((b, i) => ({ from: b.from, to: b.to, el: bandEls.current[i] })),
+      bands: BANDS.map((b, i) => ({ from: b.from, to: b.to, align: b.align, el: bandEls.current[i] })),
       refs: { flash: flashRef, cycleDot: cycleDotRef, label: labelRef },
       /* El motor solo manda los campos que CAMBIARON, asi que se funden sobre
          el estado anterior. Mandar el snapshot entero obligaria a comparar seis

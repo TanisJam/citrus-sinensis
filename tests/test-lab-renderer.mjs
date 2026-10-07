@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { CROWN, createGrowthTopology, createGrowthSample, sampleGrowth, SEED_SIZE } from '../src/lab/growth-model.js'
-import { createGrowthRenderer } from '../src/lab/growth-renderer.js'
+import { createGrowthRenderer, CAP } from '../src/lab/growth-renderer.js'
 
 const topology = createGrowthTopology(2026)
 const sample = createGrowthSample(topology)
@@ -41,10 +41,14 @@ for (let step = 0; step <= 120; step++) {
       active += sample.growth[node.id] > 0 ? 1 : 0
       for (let end = 0; end < 2; end++) {
         const center = slot * 18 + 16 + end
-        for (let axis = 0; axis < 3; axis++) near(positions.array[center * 3 + axis], (end ? sample.ends : sample.starts)[node.id * 3 + axis], 'tube end')
+        // The cap's centre domes out along the axis by CAP radii.
+        const from = new THREE.Vector3().fromArray(sample.starts, node.id * 3), to = new THREE.Vector3().fromArray(sample.ends, node.id * 3)
+        const axisDir = to.clone().sub(from), len = axisDir.length()
+        const domed = (end ? to : from).clone().addScaledVector(len > 0 ? axisDir.divideScalar(len) : axisDir, len > 0 ? (end ? 1 : -1) * CAP * Math.round(sample.radii[node.id * 2 + end] * 1e5) / 1e5 : 0)
+        for (let axis = 0; axis < 3; axis++) near(positions.array[center * 3 + axis], domed.getComponent(axis), 'tube end')
         const radius = Math.round(sample.radii[node.id * 2 + end] * 1e5) / 1e5 // drawn on a 0.01 mm grid
         vertex.fromBufferAttribute(positions, slot * 18 + end * 8)
-        near(vertex.distanceTo(new THREE.Vector3().fromBufferAttribute(positions, center)), radius, 'ring radius')
+        near(vertex.distanceTo(end ? to : from), radius, 'ring radius')
       }
     })
     assert.ok([...positions.array, ...mesh.geometry.attributes.normal.array, ...mesh.geometry.attributes.color.array].every(Number.isFinite))
