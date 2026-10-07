@@ -545,7 +545,9 @@ export function sampleGrowth(topology, progress, out) {
     const i = node.id, base = out.radii[i * 2]
     // The tip meets the continuing segment, but never thins when that one is newborn.
     const next = node.next >= 0 ? out.radii[node.next * 2] : 0
-    out.radii[i * 2 + 1] = Math.min(base, Math.max(next, base * 0.4))
+    // A free tip is blunt: a root apex is near-cylindrical under its cap, a
+    // shoot apex tapers only a little (the renderer domes both ends).
+    out.radii[i * 2 + 1] = Math.min(base, Math.max(next, base * (node.kind === 'root' ? 0.8 : 0.55)))
     if (out.growth[i] > 0) {
       const offset = i * 3
       include(out.bounds, out.starts[offset], out.starts[offset + 1], out.starts[offset + 2], base)

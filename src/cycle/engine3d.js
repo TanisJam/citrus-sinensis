@@ -37,11 +37,24 @@ export function createEngine(host) {
   // Sky dome: zenith to horizon gradient, recoloured for dusk and night.
   // Below the horizon it is earth: through the translucent soil near the trunk
   // the roots read against dark ground, as in a cut, never against sky.
-  const skyUniforms = { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, earth: { value: new THREE.Color('#3a2b1e') } }
+  const skyUniforms = { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, earth: { value: new THREE.Color('#3a2b1e') }, stars: { value: 0 } }
   const skyDome = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), new THREE.ShaderMaterial({
     uniforms: skyUniforms, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
     vertexShader: 'varying vec3 w; void main(){ w = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
-    fragmentShader: 'uniform vec3 top, horizon, earth; varying vec3 w; void main(){ float h = clamp(w.y, 0., 1.); vec3 c = w.y < 0. ? mix(horizon, earth, smoothstep(.01, .12, -w.y)) : mix(horizon, top, pow(h, .55)); gl_FragColor = vec4(c, 1.); }',
+    // Stars: sparse fixed points on the dome, fading out toward the horizon haze.
+    fragmentShader: `uniform vec3 top, horizon, earth; uniform float stars; varying vec3 w;
+      float sh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+      void main(){
+        float h = clamp(w.y, 0., 1.);
+        vec3 c = w.y < 0. ? mix(horizon, earth, smoothstep(.01, .12, -w.y)) : mix(horizon, top, pow(h, .55));
+        if (stars > 0. && w.y > 0.) {
+          vec3 q = normalize(w) * 140.0, id = floor(q), f = fract(q) - 0.5;
+          float r = sh(id), on = step(0.965, r);
+          float star = on * smoothstep(0.16, 0.02, length(f - (vec3(sh(id + 1.), sh(id + 2.), sh(id + 3.)) - 0.5) * 0.6));
+          c += vec3(0.85, 0.9, 1.0) * star * stars * (0.4 + 0.6 * sh(id + 7.)) * smoothstep(0.05, 0.3, w.y);
+        }
+        gl_FragColor = vec4(c, 1.);
+      }`,
   }))
   skyDome.renderOrder = -2
   skyDome.frustumCulled = false
@@ -609,6 +622,7 @@ export function createEngine(host) {
     hemi.intensity = 2.2 * (1 - 0.38 * night); sun.intensity = 2.4 * (1 - 0.3 * night)
     sun.color.copy(SUN).lerp(MOON, night)
     skyUniforms.horizon.value.copy(sky)
+    skyUniforms.stars.value = night
     skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night)
     earth.update({ camera, target: view.target, span, light: 1 - 0.55 * night, haze: sky })
     skyDome.position.copy(camera.position)

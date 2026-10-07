@@ -21,7 +21,7 @@ float noise(vec3 x) {
 // Weight of an octave of frequency f (cycles per metre) at this pixel's footprint.
 float lod(float f, float px) { return 1.0 - smoothstep(0.18, 0.5, f * px); }
 // Signed grain of the soil volume at p, in about [-1, 1], and stones in [0, 1].
-vec2 soilGrain(vec3 p, float px) {
+vec3 soilGrain(vec3 p, float px) {
   float g = 0.0;
   g += 0.55 * lod(1700.0, px) * (noise(p * 1700.0) - 0.5);
   g += 0.45 * lod(420.0, px) * (noise(p * 420.0 + 3.1) - 0.5);
@@ -30,9 +30,14 @@ vec2 soilGrain(vec3 p, float px) {
   g += 0.30 * (noise(p * 6.0 + 5.2) - 0.5);
   // Grit and small stones: rare, rounded (two octaves multiplied), each with
   // its own tone.
-  float grit = lod(900.0, px) * smoothstep(0.80, 0.84, noise(p * 900.0 + 11.0) * noise(p * 1800.0 + 2.0) * 1.6);
-  float pebble = lod(220.0, px) * smoothstep(0.86, 0.89, noise(p * 220.0 + 23.0) * noise(p * 440.0 + 5.0) * 1.55);
-  return vec2(g, min(grit + pebble, 1.0));
+  // The mask edge is soft and the inside rises to a dome, so a stone reads
+  // as a rounded body sitting in the soil, not a flat cut-out.
+  float gv = noise(p * 900.0 + 11.0) * noise(p * 1800.0 + 2.0) * 1.6;
+  float pv = noise(p * 220.0 + 23.0) * noise(p * 440.0 + 5.0) * 1.55;
+  float grit = lod(900.0, px) * smoothstep(0.86, 0.9, gv);
+  float pebble = lod(220.0, px) * smoothstep(0.9, 0.94, pv);
+  float dome = max(grit * smoothstep(0.86, 1.05, gv), pebble * smoothstep(0.9, 1.1, pv));
+  return vec3(g, min(grit + pebble, 1.0), dome);
 }
 `
 
@@ -64,13 +69,15 @@ export function createSoil() {
       void main() {
         float px = length(fwidth(wp));
         float d = -wp.y;
-        vec2 g = soilGrain(wp, px);
+        vec3 g = soilGrain(wp, px);
         // Horizons: humus near the top, subsoil below, wavy boundaries.
         float wave = 0.04 * (noise(wp * 3.0) - 0.5);
         vec3 c = mix(top, sub, smoothstep(0.08, 0.45, d + wave));
         c = mix(c, deep, smoothstep(0.9, 2.2, d + wave * 3.0));
         c *= 1.0 + 0.55 * g.x;
-        c = mix(c, stone * (0.7 + 0.3 * noise(wp * 900.0)), g.y * 0.6);
+        // Stones take the soil's tint, darker at the rim, lit on the dome.
+        vec3 st = mix(c, stone, 0.55) * (0.6 + 0.55 * g.z) * (0.85 + 0.3 * noise(wp * 700.0));
+        c = mix(c * (1.0 - 0.25 * g.y), st, g.y * 0.8);
         // A thin litter line at the surface, and depth falling into shadow.
         c = mix(c, top * 0.7, smoothstep(0.004, 0.0, d) * 0.6);
         c *= mix(1.0, 0.5, smoothstep(0.6, 3.6, d));
@@ -92,7 +99,7 @@ export function createSoil() {
         // Nothing in front of the cut: that soil was taken away.
         if (dot(wp - cutPoint, cutNormal) > 0.0) discard;
         float px = length(fwidth(wp));
-        vec2 g = soilGrain(wp * vec3(1.0, 0.0, 1.0), px);
+        vec3 g = soilGrain(wp * vec3(1.0, 0.0, 1.0), px);
         float patches = smoothstep(0.45, 0.75, noise(wp * 0.35) * 0.7 + noise(wp * 2.1) * 0.3);
         vec3 c = mix(dust, grass, patches * 0.75);
         c = mix(c, top, smoothstep(0.6, 0.9, noise(wp * 1.3 + 4.0)) * 0.35);
