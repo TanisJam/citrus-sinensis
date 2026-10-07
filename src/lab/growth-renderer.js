@@ -205,6 +205,9 @@ export function createGrowthRenderer(topology) {
   const anchors = new Float64Array(topology.leaves.length * 3)
   const directions = new Float64Array(anchors.length), scales = new Float64Array(topology.leaves.length)
   const shades = new Int16Array(topology.leaves.length).fill(-1), dirty = new Uint8Array(topology.leaves.length)
+  // A viewer may shrink chosen leaves out of the way (a hand parting foliage);
+  // growth keeps posing them with that factor, and setting it back restores them.
+  const leafFade = new Float32Array(topology.leaves.length).fill(1)
   anchors.fill(NaN)
   let disposed = false, windEnabled = false, windTime = 0
 
@@ -275,7 +278,7 @@ export function createGrowthRenderer(topology) {
       face.crossVectors(side, direction)
       if (face.dot(light) < 0) { side.negate(); face.negate() }
       matrix.makeBasis(side, direction, face)
-      matrix.scale(scale.setScalar(scales[i]))
+      matrix.scale(scale.setScalar(scales[i] * leafFade[i]))
       matrix.setPosition(start)
       leaves.setMatrixAt(i, matrix)
     }
@@ -291,6 +294,16 @@ export function createGrowthRenderer(topology) {
     windEnabled = Boolean(enabled)
     wind.time.value = windTime
     wind.strength.value = windEnabled ? 1 : 0
+  }
+  function fadeLeaves(list, value) {
+    if (disposed) return
+    let any = false
+    for (const i of list) {
+      if (leafFade[i] === value) continue
+      leafFade[i] = value
+      if (i < leaves.count && Number.isFinite(anchors[i * 3])) { poseLeaves(i, i + 1); any = true }
+    }
+    if (any) leaves.instanceMatrix.needsUpdate = true
   }
   function updateGrowth(sample) {
     if (disposed) return
@@ -375,5 +388,5 @@ export function createGrowthRenderer(topology) {
     group.removeFromParent()
   }
   updateGrowth(sampleGrowth(topology, 0, createGrowthSample(topology)))
-  return { group, bounds, updateGrowth, updateWind, dispose, wind }
+  return { group, bounds, updateGrowth, updateWind, fadeLeaves, dispose, wind }
 }

@@ -47,11 +47,11 @@ export function createEngine(host) {
   world.add(skyDome)
   // Ground to the horizon: translucent near the trunk, so the roots read through
   // the soil as in a cut, opaque further out, fading into the sky with distance.
-  const groundUniforms = { soil: { value: new THREE.Color('#b9a785') }, haze: { value: new THREE.Color() }, light: { value: 1 } }
+  const groundUniforms = { soil: { value: new THREE.Color('#b9a785') }, haze: { value: new THREE.Color() }, light: { value: 1 }, alpha: { value: 1 } }
   const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 64), new THREE.ShaderMaterial({
     uniforms: groundUniforms, transparent: true, depthWrite: false, side: THREE.DoubleSide,
     vertexShader: 'varying vec2 g; void main(){ g = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
-    fragmentShader: 'uniform vec3 soil, haze; uniform float light; varying vec2 g; void main(){ float r = length(g); float a = mix(.5, 1., smoothstep(3.5, 8., r)); gl_FragColor = vec4(mix(soil * light, haze, smoothstep(12., 55., r)), a); }',
+    fragmentShader: 'uniform vec3 soil, haze; uniform float light, alpha; varying vec2 g; void main(){ float r = length(g); float a = mix(.5, 1., smoothstep(3.5, 8., r)) * alpha; gl_FragColor = vec4(mix(soil * light, haze, smoothstep(12., 55., r)), a); }',
   }))
   ground.rotation.x = -Math.PI / 2
   ground.position.y = -0.0005
@@ -76,27 +76,28 @@ export function createEngine(host) {
   // ---------- The interior: the chosen orange, opened.
   const inside = new THREE.Scene()
   const insideCamera = new THREE.PerspectiveCamera(42, 1, 0.05, 60)
-  inside.add(new THREE.HemisphereLight('#fff9ec', '#c9b9a0', 2.1))
+  // The plate is lit evenly, like an anatomy plate; on the way in and out its
+  // light is the world's, so the orange (and later the seed) does not change
+  // look as it crosses from one to the other.
+  const PLATE_SKY = new THREE.Color('#fff9ec'), PLATE_GROUND = new THREE.Color('#c9b9a0'), PLATE_SUN = new THREE.Color('#fff4da')
+  const insideHemi = new THREE.HemisphereLight(PLATE_SKY, PLATE_GROUND, 2.1)
+  inside.add(insideHemi)
   const insideSun = new THREE.DirectionalLight('#fff4da', 2.2)
   insideSun.position.set(2, 4, 6)
   inside.add(insideSun)
   const anatomy = createAnatomy()
   inside.add(anatomy.group)
-  inside.background = new THREE.Color('#efe6d2')
+  const PLATE = new THREE.Color('#efe6d2')
+  inside.background = PLATE
 
-  // ---------- Compositing for the crossfade between the two.
-  // Render targets hold linear, un-tone-mapped light (three applies both only
-  // on the way to the screen), so the mix applies them itself: a crossfade
-  // frame must look like its two ends, not darker and more saturated.
-  const targets = [0, 1].map(() => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }))
-  const mix = new THREE.ShaderMaterial({
-    uniforms: { a: { value: null }, b: { value: null }, t: { value: 0 } },
-    vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }',
-    fragmentShader: 'uniform sampler2D a, b; uniform float t; varying vec2 v; void main(){ gl_FragColor = mix(texture2D(a, v), texture2D(b, v), t);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
-    depthTest: false, depthWrite: false,
-  })
+  // ---------- Between the two: the world, the plate laid over it at the fade's
+  // opacity, and the opened fruit drawn on top at full strength. Every layer
+  // goes straight to the screen through the same pipeline as the frames on
+  // either side, so the in-between frames cannot shift colour.
+  const plateMaterial = new THREE.MeshBasicMaterial({ color: '#efe6d2', transparent: true, depthTest: false, depthWrite: false, toneMapped: false })
   const quadScene = new THREE.Scene()
-  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mix)
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), plateMaterial)
+  quad.frustumCulled = false
   quadScene.add(quad)
   const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
@@ -162,7 +163,6 @@ export function createEngine(host) {
     return out
   })
   const green = new THREE.Color(0x4b7a24), tint = new THREE.Color(), matrix = new THREE.Matrix4()
-  const zero = new THREE.Matrix4().makeScale(0, 0, 0), leafMesh = plant.group.getObjectByName('leaves')
 
   // ---------- Scroll, loop, choice.
   let target = 0, p = 0, pPrev = 0, scrollV = 0, skipV = false
@@ -190,7 +190,6 @@ export function createEngine(host) {
     width = innerWidth; height = innerHeight
     renderer.setPixelRatio(dpr)
     renderer.setSize(width, height, false)
-    for (const t of targets) t.setSize(Math.round(width * dpr), Math.round(height * dpr))
     camera.aspect = insideCamera.aspect = width / height
     camera.updateProjectionMatrix(); insideCamera.updateProjectionMatrix()
   }
@@ -199,7 +198,7 @@ export function createEngine(host) {
   resize()
 
   // ---------- Growth, sampled only when the age actually changes.
-  let lastModel = -1, partedNow = false
+  let lastModel = -1, partedFor = -1
   function grow(pe) {
     const days = T.ageAt(pe)
     const mp = Math.round(progressAtAge(days) * 20000) / 20000
@@ -227,11 +226,10 @@ export function createEngine(host) {
       fruitMesh.instanceColor.needsUpdate = true
       fruitMesh.instanceMatrix.needsUpdate = true
     }
-    if (pe >= 0.776) {
-      for (const k of parted[chosenFruit]) if (k < leafMesh.count) leafMesh.setMatrixAt(k, zero)
-      leafMesh.instanceMatrix.needsUpdate = true
-      partedNow = true
-    } else if (partedNow) { partedNow = false; lastModel = -1 }
+    // Leaves in the close-up's path shrink back as the camera comes in, and
+    // return when it leaves (or when another orange is the chosen one).
+    if (partedFor !== chosenFruit) { if (partedFor >= 0) plant.fadeLeaves(parted[partedFor], 1); partedFor = chosenFruit }
+    plant.fadeLeaves(parted[chosenFruit], 1 - T.smooth(T.clamp((pe - 0.762) / 0.022)))
     // The model's buried seed takes over from the falling one once it is covered,
     // and swells as it drinks (imbibition, up to +30%).
     const buried = pe >= 0.062
@@ -340,7 +338,7 @@ export function createEngine(host) {
   const ZENITH_DAY = new THREE.Color('#7fa6c6'), ZENITH_NIGHT = new THREE.Color('#0e1a2e')
   const SUN = new THREE.Color('#fff4da'), MOON = new THREE.Color('#9fb6dd')
   const SOIL = new THREE.Color('#3a2b1e')
-  const soilFog = new THREE.Fog(SOIL, 1, 3), skyFog = new THREE.Fog(SOIL, 25, 85)
+  const skyFog = new THREE.Fog(SOIL, 25, 85)
   const sky = new THREE.Color()
   const luma = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
   let brandDark = false, navDark = false
@@ -399,6 +397,13 @@ export function createEngine(host) {
     // orange keeps its look as it leaves the branch.
     insideSun.position.copy(sun.position).normalize().transformDirection(camera.matrixWorldInverse)
       .transformDirection(insideCamera.matrixWorld).multiplyScalar(10)
+    // Plate light only while the plate is up; the world's light at both ends.
+    const plateLight = T.smooth(T.ramp(pe, T.IN_ENTER)) * (1 - T.smooth(T.clamp((pe - 0.93) / 0.016)))
+    insideHemi.color.copy(hemi.color).lerp(PLATE_SKY, plateLight)
+    insideHemi.groundColor.copy(hemi.groundColor).lerp(PLATE_GROUND, plateLight)
+    insideHemi.intensity = T.lerp(hemi.intensity, 2.1, plateLight)
+    insideSun.color.copy(sun.color).lerp(PLATE_SUN, plateLight)
+    insideSun.intensity = T.lerp(sun.intensity, 2.2, plateLight)
     const enter = T.smooth(T.ramp(pe, T.IN_ENTER))
     // Arrive from where the fruit was on screen, at the size it had there.
     entryNDC.copy(fruitPoint).project(camera)
@@ -421,6 +426,9 @@ export function createEngine(host) {
     anatomy.update({ peel: T.ramp(pe, T.IN_PEEL), exit: T.ramp(pe, T.IN_EXIT), turn: T.ramp(pe, T.IN_TURN),
       bare: T.ramp(pe, T.IN_BARE), fan: fanned, open: T.ramp(pe, T.IN_OPEN), rel: T.ramp(pe, T.IN_REL),
       chosen: chosenGajo, hover, rind: hueColors[chosenFruit].getHex(), named: gajos.length, step: narrow ? 0.62 : 1.05 })
+    // The fruit is drawn over the world at full strength on the way in; on the
+    // way out everything but the travelling seed fades with the plate.
+    const exitFade = pe > 0.9 ? interior : 1
     // The released seed flies to where the next lap's seed hangs, at its size.
     if (pe > T.IN_REL[0]) {
       // Same screen point and the same apparent size as the dispersal seed:
@@ -432,9 +440,9 @@ export function createEngine(host) {
       const ray = v3.sub(insideCamera.position).normalize()
       const angular = SEED_SIZE[1] / 0.11, seedHalf = 0.13 * anatomy.group.scale.x
       const goal = insideCamera.position.clone().addScaledVector(ray, seedHalf / angular)
-      anatomy.setFade(1 - k)
+      anatomy.setFade(Math.min(1 - k, exitFade))
       anatomy.placeSeed(chosenGajo, goal, k)
-    } else anatomy.setFade(1)
+    } else anatomy.setFade(exitFade)
     // Labels: project, its ideas, the five named carpels, and the hovered gloss.
     const project = PROJECTS[chosenFruit], gajo = gajos[chosenGajo]
     const labelsOn = T.clamp((pe - 0.866) / 0.02) * (1 - T.clamp((pe - 0.93) / 0.012))
@@ -511,23 +519,27 @@ export function createEngine(host) {
     camera.near = Math.max(0.0005, span * 0.02); camera.far = Math.max(span * 4 + 20, 130)
     camera.updateProjectionMatrix()
     seedCam.aspect = camera.aspect; seedCam.position.copy(seedPose(tmpA, SEED_START).position); seedCam.lookAt(tmpA.target); seedCam.updateProjectionMatrix(); seedCam.updateMatrixWorld()
-    // Sky by day and night; the soil when the camera is under it.
+    // Sky by day and night; the soil while the camera is in it. Going in and
+    // coming out are dissolves over time (not a switch at the plane), and the
+    // ground plane thins out as the camera passes through it, so no frame
+    // swaps sky for soil at once.
     sky.copy(SKY_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.35).lerp(SKY_NIGHT, night)
-    const under = camera.position.y < 0
-    world.background = under ? SOIL : sky
-    skyDome.visible = !under
-    soilFog.near = span * 0.8; soilFog.far = span * 3
-    world.fog = under ? soilFog : skyFog
+    const soil = worldPe < 0.05 ? 0 : worldPe < 0.25 ? T.smooth(T.clamp((worldPe - 0.05) / 0.012)) : 1 - T.smooth(T.clamp((worldPe - 0.25) / 0.04))
+    world.background = null
+    skyDome.visible = true
+    world.fog = skyFog
+    skyFog.near = T.lerp(25, span * 0.8, soil); skyFog.far = T.lerp(85, span * 3, soil)
+    groundUniforms.alpha.value = T.smooth(T.clamp(Math.abs(camera.position.y) / Math.max(0.004, span * 0.08)))
     // Moonlight keeps the tree legible at night, blue and dim.
     hemi.intensity = 2.2 * (1 - 0.38 * night); sun.intensity = 2.4 * (1 - 0.3 * night)
     sun.color.copy(SUN).lerp(MOON, night)
-    skyUniforms.horizon.value.copy(sky)
-    skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night)
+    skyUniforms.horizon.value.copy(sky).lerp(SOIL, soil)
+    skyUniforms.top.value.copy(ZENITH_DAY).lerp(SKY_DUSK, Math.min(1, night * 2) * 0.25).lerp(ZENITH_NIGHT, night).lerp(SOIL, soil)
     groundUniforms.haze.value.copy(sky)
     groundUniforms.light.value = 1 - 0.62 * night
     skyDome.position.copy(camera.position)
-    skyFog.color.copy(sky)
-    const bg = interior > 0.5 ? inside.background : world.background
+    skyFog.color.copy(sky).lerp(SOIL, soil)
+    const bg = interior > 0.5 ? inside.background : skyFog.color
     const l = luma(bg)
     const dark = l < 0.42
     brandDark = brandDark ? l < 0.45 : l < 0.39
@@ -538,11 +550,15 @@ export function createEngine(host) {
     if (interior <= 0) renderer.render(world, camera)
     else if (interior >= 1) renderer.render(inside, insideCamera)
     else {
-      renderer.setRenderTarget(targets[0]); renderer.render(world, camera)
-      renderer.setRenderTarget(targets[1]); renderer.render(inside, insideCamera)
-      renderer.setRenderTarget(null)
-      mix.uniforms.a.value = targets[0].texture; mix.uniforms.b.value = targets[1].texture; mix.uniforms.t.value = interior
+      renderer.render(world, camera)
+      renderer.autoClear = false
+      plateMaterial.opacity = interior
       renderer.render(quadScene, quadCamera)
+      inside.background = null
+      renderer.clearDepth()
+      renderer.render(inside, insideCamera)
+      inside.background = PLATE
+      renderer.autoClear = true
     }
     updateDOM(pe, T.pToS(p), night, interior, orange, dark)
 
@@ -575,8 +591,7 @@ export function createEngine(host) {
       overlay.remove()
       plant.dispose(); anatomy.dispose()
       fallingSeed.geometry.dispose(); fallingSeedMaterial.dispose()
-      for (const t of targets) t.dispose()
-      quad.geometry.dispose(); mix.dispose()
+      quad.geometry.dispose(); plateMaterial.dispose()
       renderer.dispose()
     },
   }

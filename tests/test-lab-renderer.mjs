@@ -97,6 +97,21 @@ assert.equal(previousActive, topology.nodes.length)
 const still = leaves.instanceMatrix.version
 renderer.updateWind(5, false)
 assert.equal(leaves.instanceMatrix.version, still)
+// Parting leaves out of a close-up is reversible, and survives growth updates
+// that do not touch those leaves (they are not re-posed then).
+{
+  const k = Math.floor(leaves.count / 2), before = new THREE.Matrix4(), now = new THREE.Matrix4()
+  leaves.getMatrixAt(k, before)
+  renderer.fadeLeaves([k], 0.25)
+  leaves.getMatrixAt(k, now)
+  near(now.getMaxScaleOnAxis(), before.getMaxScaleOnAxis() * 0.25, 'faded leaf scale')
+  renderer.updateGrowth(sample)
+  leaves.getMatrixAt(k, now)
+  near(now.getMaxScaleOnAxis(), before.getMaxScaleOnAxis() * 0.25, 'fade kept across updates')
+  renderer.fadeLeaves([k], 1)
+  leaves.getMatrixAt(k, now)
+  for (let e = 0; e < 16; e++) near(now.elements[e], before.elements[e], 'unfaded leaf restored')
+}
 // Wood greens to bark, roots whiten to brown; thorns stand in leaf axils.
 const woodColors = wood.geometry.attributes.color
 const trunkSlot = topology.nodes.filter(n => n.kind === 'wood').findIndex(n => n.level === 0)
