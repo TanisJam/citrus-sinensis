@@ -8,6 +8,7 @@ import * as THREE from 'three'
 const CARPELS = 10, LUNES = 8, GAP = 0.025
 
 const ease = t => t * t * (3 - 2 * t)
+const T = (a, b, t) => a + (b - a) * t
 
 // One spherical lune of a shell between two angles around Y.
 function luneGeometry(a0, a1, radius, thickness) {
@@ -93,8 +94,9 @@ export function createAnatomy() {
   const own = x => { owned.add(x); return x }
   const flavedoMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf08a12, roughness: 0.55, transparent: true }))
   const pithMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf6efdc, roughness: 0.95, transparent: true }))
-  const carpelMaterial = own(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, transparent: true }))
-  const seedMaterial = own(new THREE.MeshStandardMaterial({ color: 0xefdfb4, roughness: 0.7, transparent: true }))
+  // One material per carpel: the unnamed ones and, later, the unchosen ones fade alone.
+  const carpelMaterials = Array.from({ length: CARPELS }, () => own(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, transparent: true })))
+  const seedMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf2e8cc, roughness: 0.7, transparent: true }))
   const juice = new THREE.Color(0xf07f0c)
 
   // Rind and pith: lunes that hinge open from the stylar (bottom) pole.
@@ -120,23 +122,32 @@ export function createAnatomy() {
       const hinge = new THREE.Group()
       // Each half hinges on the carpel's outer rim, along its middle.
       hinge.position.set(Math.cos(mid) * 0.88, 0, Math.sin(mid) * 0.88)
-      const mesh = new THREE.Mesh(own(carpelHalfGeometry(b0, b1, 0.1, 0.88, juice)), carpelMaterial)
+      const mesh = new THREE.Mesh(own(carpelHalfGeometry(b0, b1, 0.1, 0.88, juice)), carpelMaterials[k])
       mesh.position.set(-Math.cos(mid) * 0.88, 0, -Math.sin(mid) * 0.88)
       mesh.userData.carpel = k
       hinge.add(mesh)
       holder.add(hinge)
       return { hinge, mesh, side: h ? 1 : -1 }
     })
-    const seed = new THREE.Mesh(own(new THREE.SphereGeometry(1, 12, 8)), seedMaterial)
-    // ~1 cm in a ~7.5 cm fruit: about a quarter of the radius.
-    seed.scale.set(0.07, 0.13, 0.05)
-    seed.position.set(Math.cos(mid) * 0.42, 0.05, Math.sin(mid) * 0.42)
-    seed.rotation.set(0, -mid, Math.PI / 2)
-    holder.add(seed)
-    return { holder, halves, seed, mid }
+    // ~1 cm in a ~7.5 cm fruit: about a quarter of the radius. Two per
+    // carpel, along its inner angle; the first is the one that leaves.
+    const seedGeometry = own(new THREE.SphereGeometry(1, 12, 8))
+    const seeds = [0.42, 0.62].map(r => {
+      const seed = new THREE.Mesh(seedGeometry, seedMaterial)
+      seed.scale.set(0.07, 0.13, 0.05)
+      seed.position.set(Math.cos(mid) * r, 0.05, Math.sin(mid) * r)
+      seed.rotation.set(0, -mid, Math.PI / 2)
+      seed.visible = false
+      holder.add(seed)
+      return seed
+    })
+    return { holder, halves, seed: seeds[0], seeds, mid }
   })
   const pickables = carpels.flatMap(c => c.halves.map(h => h.mesh))
   const anchor = new THREE.Vector3(), released = new THREE.Vector3()
+  const X_AXIS = new THREE.Vector3(1, 0, 0), Y_AXIS = new THREE.Vector3(0, 1, 0), Z_AXIS = new THREE.Vector3(0, 0, 1)
+  const qLean = new THREE.Quaternion(), qSide = new THREE.Quaternion(), qGoal = new THREE.Quaternion()
+  const mid = new THREE.Vector3(), goal = new THREE.Vector3()
 
   function setOpacity(material, value) {
     material.opacity = value
@@ -167,19 +178,57 @@ export function createAnatomy() {
     setOpacity(pithMaterial, 1 - bare)
     // Side view to cross-section: the stem end turns toward the viewer.
     body.rotation.set(ease(state.turn) * Math.PI / 2, 0, 0)
-    // The carpels part into a fan; the chosen one opens; its seed comes out.
-    const fan = ease(state.fan), open = ease(state.open), rel = ease(state.rel)
+    // The carpels leave the rosette for a row across the plate, as in the 2D
+    // piece: the named ones (one per idea of the project) each with its own
+    // delay, outer ones first; the unnamed sink away. The chosen one then
+    // comes forward, parts its halves on its seeds, and lets one go.
+    // Row coordinates are on screen (x right, y up) once the fruit has turned:
+    // local x is screen x and local -z is screen y.
+    const fan = state.fan, open = ease(state.open), rel = ease(state.rel)
+    const named = state.named ?? 5, step = state.step ?? 1.05
     for (const [k, c] of carpels.entries()) {
-      const spread = fan * (0.55 + (k === state.chosen ? 0.25 * open : 0))
-      c.holder.position.set(Math.cos(c.mid) * spread, 0, Math.sin(c.mid) * spread)
-      const lift = k === state.hover ? 0.06 : 0
-      c.holder.position.y = lift
-      for (const half of c.halves) {
-        half.hinge.rotation.set(0, k === state.chosen ? half.side * open * 0.9 : 0, 0)
+      let opacity = 1
+      c.holder.quaternion.identity()
+      c.holder.scale.setScalar(1)
+      c.holder.position.set(0, 0, 0)
+      for (const half of c.halves) half.hinge.rotation.set(0, 0, 0)
+      if (k < named) {
+        const kk = named > 1 ? (k - (named - 1) / 2) / ((named - 1) / 2) : 0
+        const lead = (1 - Math.abs(kk)) * 0.2
+        const fi = ease(Math.min(1, Math.max(0, (fan - lead * 0.5) / (1 - lead * 0.5))))
+        const chosen = k === state.chosen
+        // A loose segment stands on screen as it does on a plate: pole to pole
+        // upright, seen on its side membrane (a fat crescent, rim to one side),
+        // the outer ones leaning out. On screen that is Rz(lean)·Ry(mid - pi);
+        // the holder lives in the turned body, so undo the turn first.
+        let x = kk * step * (named - 1) / 2, y = 0.05 - Math.abs(kk) * 0.12, scale = 0.62, lean = -kk * 0.3
+        if (chosen) { x = T(x, 0, open); y = T(y, 0.15, open); scale = T(scale, 0.95, open); lean = T(lean, 0, open) }
+        else opacity = 1 - 0.75 * open
+        qLean.setFromAxisAngle(Z_AXIS, lean)
+        qSide.setFromAxisAngle(Y_AXIS, c.mid - Math.PI)
+        qGoal.setFromAxisAngle(X_AXIS, -Math.PI / 2).multiply(qLean).multiply(qSide)
+        c.holder.quaternion.slerp(qGoal, fi)
+        const sc = T(1, scale, fi)
+        c.holder.scale.setScalar(sc)
+        // Place the carpel's middle, not its tip (the holder's origin), at
+        // (x, y) on screen; in the body that is (x, depth, -y).
+        mid.set(Math.cos(c.mid) * 0.5, 0, Math.sin(c.mid) * 0.5)
+        goal.set(x, (k === state.hover ? 0.12 : 0) + (chosen ? 0.3 * open : 0), -y).multiplyScalar(fi).addScaledVector(mid, 1 - fi)
+        c.holder.position.copy(goal).sub(mid.multiplyScalar(sc).applyQuaternion(c.holder.quaternion))
+        // The chosen one opens like a book on its seeds: the half facing the
+        // viewer swings back on the rim.
+        if (chosen) c.halves[0].hinge.rotation.y = -open * 2.1
+        for (const seed of c.seeds) seed.visible = chosen && open > 0
+      } else {
+        const g = Math.min(1, fan * 2.4)
+        opacity = 1 - g
+        c.holder.scale.setScalar(1 - 0.4 * g)
+        c.holder.position.y = -0.8 * g
+        for (const seed of c.seeds) seed.visible = false
       }
-      c.seed.visible = k === state.chosen ? open > 0 : false
-    c.seed.rotation.set(0, -c.mid, Math.PI / 2)
-    c.holder.visible = true
+      setOpacity(carpelMaterials[k], opacity)
+      c.holder.visible = opacity > 0.002
+      c.seed.rotation.set(0, -c.mid, Math.PI / 2)
     }
     const chosen = carpels[state.chosen]
     if (chosen) {
@@ -187,20 +236,23 @@ export function createAnatomy() {
       chosen.seed.updateMatrixWorld()
       released.setFromMatrixPosition(chosen.seed.matrixWorld)
     }
-    setOpacity(carpelMaterial, 1)
     setOpacity(seedMaterial, 1)
     group.updateMatrixWorld(true)
   }
   // Where to pin a carpel's label: its outer rim, in world space.
   function carpelAnchor(k, out = anchor) {
     const c = carpels[k]
-    return out.set(Math.cos(c.mid) * 0.95, 0, Math.sin(c.mid) * 0.95).applyMatrix4(c.holder.matrixWorld)
+    // Over the standing segment: its upper pole, halfway out.
+    return out.set(Math.cos(c.mid) * 0.45, 0.98, Math.sin(c.mid) * 0.45).applyMatrix4(c.holder.matrixWorld)
   }
   function seedWorld(out = released) { return out.copy(released) }
   // Everything but the released seed fades as the seed leaves.
   function setFade(value) {
-    for (const m of [carpelMaterial, pithMaterial, flavedoMaterial]) setOpacity(m, Math.min(m.opacity, value))
-    for (const c of carpels) c.holder.visible = value > 0.001
+    for (const m of [...carpelMaterials, pithMaterial, flavedoMaterial]) setOpacity(m, Math.min(m.opacity, value))
+    for (const c of carpels) {
+      c.holder.visible = c.holder.visible && value > 0.001
+      c.seeds[1].visible = c.seeds[1].visible && value > 0.001
+    }
     const chosen = carpels.find(c => c.seed.visible)
     if (chosen) chosen.holder.visible = true
   }

@@ -65,7 +65,9 @@ export function createEngine(host) {
   const seedBase = modelSeed.map(() => new THREE.Vector3()), seedShown = modelSeed.map(() => false)
   const fruitMesh = plant.group.getObjectByName('fruits')
   // The seed that falls at the start of every lap: the one released by the last.
-  const fallingSeedMaterial = new THREE.MeshStandardMaterial({ color: '#f4ecd4', roughness: 0.7 })
+  // One seed colour everywhere, so the released seed is the next lap's seed.
+  const SEED_COLOR = '#f2e8cc'
+  const fallingSeedMaterial = new THREE.MeshStandardMaterial({ color: SEED_COLOR, roughness: 0.7 })
   const fallingSeed = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), fallingSeedMaterial)
   fallingSeed.scale.set(...SEED_SIZE)
   world.add(fallingSeed)
@@ -83,11 +85,14 @@ export function createEngine(host) {
   inside.background = new THREE.Color('#efe6d2')
 
   // ---------- Compositing for the crossfade between the two.
-  const targets = [new THREE.WebGLRenderTarget(1, 1), new THREE.WebGLRenderTarget(1, 1)]
+  // Render targets hold linear, un-tone-mapped light (three applies both only
+  // on the way to the screen), so the mix applies them itself: a crossfade
+  // frame must look like its two ends, not darker and more saturated.
+  const targets = [0, 1].map(() => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }))
   const mix = new THREE.ShaderMaterial({
     uniforms: { a: { value: null }, b: { value: null }, t: { value: 0 } },
     vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }',
-    fragmentShader: 'uniform sampler2D a, b; uniform float t; varying vec2 v; void main(){ gl_FragColor = mix(texture2D(a, v), texture2D(b, v), t); }',
+    fragmentShader: 'uniform sampler2D a, b; uniform float t; varying vec2 v; void main(){ gl_FragColor = mix(texture2D(a, v), texture2D(b, v), t);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
     depthTest: false, depthWrite: false,
   })
   const quadScene = new THREE.Scene()
@@ -211,8 +216,10 @@ export function createEngine(host) {
         tint.copy(green).lerp(hueColors[k], c)
         fruitMesh.setColorAt(i, tint)
         if (k === chosenFruit) {
+          // It leaves the branch when the opened fruit takes over: one orange
+          // travelling, never two.
           const pop = 1 + 0.13 * T.smooth(T.clamp((pe - 0.786) / 0.02))
-          const r = sample.fruitScales[i] * pop
+          const r = pe >= T.IN_ENTER[0] && pe < 0.93 ? 0 : sample.fruitScales[i] * pop
           matrix.makeScale(r, r, r).setPosition(sample.fruitPositions[i * 3], sample.fruitPositions[i * 3 + 1], sample.fruitPositions[i * 3 + 2])
           fruitMesh.setMatrixAt(i, matrix)
         }
@@ -234,7 +241,7 @@ export function createEngine(host) {
     const fallT = T.clamp(pe / T.LOOP_LEN)
     const y = pe < T.LOOP_LEN ? T.lerp(SEED_START, SEED_SIZE[1], fallT * fallT) : T.lerp(SEED_SIZE[1], -SEED_DEPTH, T.smooth(T.clamp((pe - 0.05) / 0.012)))
     fallingSeed.position.set(0, y, 0)
-    fallingSeedMaterial.color.set(carried ? '#EFDFB4' : '#f4ecd4')
+    fallingSeedMaterial.color.set(SEED_COLOR)
   }
 
   // ---------- The camera, stage by stage.
@@ -379,13 +386,14 @@ export function createEngine(host) {
   function placeInside(pe, interior) {
     const narrow = width < 900 && height > 560
     const fanned = T.ramp(pe, T.IN_FAN)
-    // Room for the opening rind, then for the fan; the fruit sits left of the
-    // labels (or above them on a tall narrow screen).
-    const reach = T.lerp(2.1, 2.4, fanned)
-    const d = reach / Math.tan(21 * Math.PI / 180) / Math.min(1, insideCamera.aspect) * (narrow ? 1.2 : 1)
-    const shiftX = narrow ? 0 : reach * 0.42, shiftY = narrow ? reach * 0.12 : 0
-    insideCamera.position.set(shiftX, 0.15 + shiftY, d)
-    insideCamera.lookAt(shiftX, shiftY, 0)
+    // Centred like the 2D plate, a little above the middle (the specimen label
+    // and the project tag hold the bottom); on a tall narrow screen it sits
+    // lower, under the stacked labels. Room for the opening rind, then for the row.
+    const reach = T.lerp(2.1, narrow ? 2.1 : 2.2, fanned)
+    const d = reach / Math.tan(21 * Math.PI / 180) / Math.min(1, insideCamera.aspect) * (narrow ? T.lerp(0.78, 0.92, fanned) : 1)
+    const lookY = narrow ? reach * 0.14 : -reach * 0.1
+    insideCamera.position.set(0, lookY + 0.15, d)
+    insideCamera.lookAt(0, lookY, 0)
     insideCamera.updateMatrixWorld()
     // Light the opened fruit from where the sun was, relative to the eye, so the
     // orange keeps its look as it leaves the branch.
@@ -407,12 +415,12 @@ export function createEngine(host) {
     if (interior > 0.9 && fanned > 0.5) {
       raycaster.setFromCamera(pointer, insideCamera)
       const hit = raycaster.intersectObjects(anatomy.pickables, false)[0]
-      if (hit && hit.object.userData.carpel < 5) hover = hit.object.userData.carpel
+      if (hit && hit.object.userData.carpel < PROJECTS[chosenFruit].gajos.length) hover = hit.object.userData.carpel
     }
     const gajos = PROJECTS[chosenFruit].gajos
     anatomy.update({ peel: T.ramp(pe, T.IN_PEEL), exit: T.ramp(pe, T.IN_EXIT), turn: T.ramp(pe, T.IN_TURN),
       bare: T.ramp(pe, T.IN_BARE), fan: fanned, open: T.ramp(pe, T.IN_OPEN), rel: T.ramp(pe, T.IN_REL),
-      chosen: chosenGajo, hover, rind: hueColors[chosenFruit].getHex() })
+      chosen: chosenGajo, hover, rind: hueColors[chosenFruit].getHex(), named: gajos.length, step: narrow ? 0.62 : 1.05 })
     // The released seed flies to where the next lap's seed hangs, at its size.
     if (pe > T.IN_REL[0]) {
       // Same screen point and the same apparent size as the dispersal seed:
@@ -432,26 +440,32 @@ export function createEngine(host) {
     const labelsOn = T.clamp((pe - 0.866) / 0.02) * (1 - T.clamp((pe - 0.93) / 0.012))
     overlay.style.opacity = labelsOn.toFixed(3)
     if (labelsOn > 0) {
-      title.innerHTML = `<div style="font:500 28px/1.1 Fraunces, serif;letter-spacing:0">${project.name}</div><div style="opacity:.7">${project.meta}</div>`
-      Object.assign(title.style, narrow ? { left: '20px', top: '86px' } : { left: '60%', top: '20%' })
-      ideasBox.innerHTML = `<div style="opacity:.6;margin-bottom:6px">IDEAS THIS IS MADE OF</div>` +
-        gajo.seeds.map(s => `<div>— ${IDEAS[s]}</div>`).join('')
-      Object.assign(ideasBox.style, narrow ? { left: '20px', top: '150px' } : { left: '60%', top: '33%', maxWidth: '34ch' })
-      const namesOn = fanned
+      const opened = T.ramp(pe, T.IN_OPEN)
+      title.innerHTML = `<div style="letter-spacing:.24em;font-weight:600">${project.name.toUpperCase()}</div><div style="opacity:.65;letter-spacing:.14em;margin-top:6px">${project.meta}</div>`
+      Object.assign(title.style, { left: '50%', top: narrow ? '84px' : '52px', transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap' })
+      ideasBox.innerHTML = `<div style="opacity:.6;letter-spacing:.18em;margin-bottom:8px">IDEAS THIS IS MADE OF</div>` +
+        gajo.seeds.map(s => `<div style="font-weight:600;letter-spacing:.08em;margin-top:4px">${IDEAS[s]}</div>`).join('')
+      Object.assign(ideasBox.style, { left: '50%', top: narrow ? '150px' : '76%', transform: 'translateX(-50%)', textAlign: 'center', width: 'max-content', maxWidth: narrow ? 'calc(100vw - 40px)' : '34ch',
+        opacity: T.lerp(0.45 * fanned, 1, opened).toFixed(2) })
+      const namesOn = fanned * (1 - 0.6 * opened)
       names.forEach((el, k) => {
-        el.textContent = narrow ? `${k + 1}` : gajos[k].name
-        el.style.opacity = (namesOn * (k === chosenGajo || k === hover ? 1 : 0.6)).toFixed(2)
+        el.style.display = k < gajos.length ? 'block' : 'none'
+        if (k >= gajos.length) return
+        el.textContent = narrow ? `${k + 1}` : gajos[k].name.toUpperCase()
+        el.style.letterSpacing = '.16em'
+        el.style.opacity = (namesOn * (k === chosenGajo || k === hover ? 1 : 0.62)).toFixed(2)
         el.style.fontWeight = k === chosenGajo ? '600' : '400'
         anatomy.carpelAnchor(k, v3).project(insideCamera)
         el.style.left = `${((v3.x + 1) / 2 * width).toFixed(0)}px`
         el.style.top = `${((1 - v3.y) / 2 * height).toFixed(0)}px`
-        el.style.transform = v3.x < 0 ? 'translate(-100%, -50%)' : 'translate(0, -50%)'
+        el.style.transform = 'translate(-50%, -160%)'
+        el.style.whiteSpace = 'nowrap'
       })
       if (hover !== glossFor) { glossFor = hover; glossShown = 0 }
       const about = hover >= 0 ? gajos[hover].about : ''
       glossShown = REDUCED ? about.length : Math.min(about.length, glossShown + 2)
       gloss.textContent = about.slice(0, glossShown)
-      Object.assign(gloss.style, narrow ? { left: '20px', top: '330px' } : { left: '60%', top: '48%' })
+      Object.assign(gloss.style, narrow ? { left: '20px', top: '330px' } : { left: '50%', top: '66%', transform: 'translateX(-50%)', textAlign: 'center' })
       // On a tall narrow screen the carpels carry numbers; the key names them.
       keyList.style.display = narrow ? 'block' : 'none'
       if (narrow) {
@@ -488,6 +502,8 @@ export function createEngine(host) {
     // Wind first: growth then parts the leaves in front of the chosen orange.
     plant.updateWind(now / 1000, !REDUCED && worldPe > 0.3)
     grow(worldPe)
+    // The next lap's seed appears only once the released one has reached it.
+    if (pe >= 0.93 && pe < T.IN_REL[0] + 0.004) fallingSeed.visible = false
     const view = direct(worldPe)
     camera.position.copy(view.position)
     camera.lookAt(view.target)
