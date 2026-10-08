@@ -101,7 +101,7 @@ for (const fig of FIGURES) {
   await page.evaluate(() => {
     /* Fuera la interfaz: la figura es el dibujo. `#grain` se va porque el ruido
        es lo peor que le puede pasar a un JPEG. */
-    for (const s of ['.band', '.label', '.nav', '.brand', '.cycle', '.hint', '.snd', '#grain'])
+    for (const s of ['.band', '.label', '.nav', '.brand', '.cycle', '.hint', '.snd', '#grain', '.engine3d-labels', '.tag'])
       document.querySelectorAll(s).forEach(el => (el.style.display = 'none'))
   })
   await new Promise(r => setTimeout(r, 500))

@@ -1,0 +1,318 @@
+import * as THREE from 'three'
+import { addRindGlands } from '../lab/growth-renderer.js'
+
+// The opened orange of the climax, in its own unit space: fruit centre at the
+// origin, radius 1, stem end toward +Y. Anatomy, outside in: the flavedo (the
+// coloured, oil-dotted rind), the albedo (white spongy pith), and ten carpels
+// (the segments), each a wedge of juice vesicles in a thin membrane, with seeds.
+// Every motion is a pure function of the climax ramps, so any seek is exact.
+const CARPELS = 10, LUNES = 8, GAP = 0.025
+
+const ease = t => t * t * (3 - 2 * t)
+const T = (a, b, t) => a + (b - a) * t
+
+// One spherical lune of a shell between two angles around Y.
+function luneGeometry(a0, a1, radius, thickness) {
+  const geometry = new THREE.SphereGeometry(radius, 14, 28, a0, a1 - a0, 0, Math.PI)
+  const inner = new THREE.SphereGeometry(radius - thickness, 14, 28, a0, a1 - a0, 0, Math.PI)
+  inner.index.array.reverse()
+  const merged = mergeGeometries([geometry, inner])
+  geometry.dispose(); inner.dispose()
+  return merged
+}
+function mergeGeometries(list) {
+  const positions = [], normals = [], indices = []
+  let offset = 0
+  for (const g of list) {
+    positions.push(...g.attributes.position.array)
+    normals.push(...g.attributes.normal.array)
+    for (const i of g.index.array) indices.push(i + offset)
+    offset += g.attributes.position.count
+  }
+  const out = new THREE.BufferGeometry()
+  out.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  out.setIndex(indices)
+  out.computeVertexNormals()
+  return out
+}
+
+// Half a carpel: a wedge between two angles, rounded to the fruit, closed by
+// its membranes. Colours: deep juice orange inside, paler membrane outside.
+function carpelHalfGeometry(a0, a1, inner, outer, juice) {
+  const rings = 12, steps = 8
+  const positions = [], colors = [], indices = []
+  const membrane = juice.clone().lerp(new THREE.Color(0xfff1d6), 0.22)
+  const height = r => 0.93 * Math.sqrt(Math.max(0, 1 - r * r)) + 0.02
+  const grid = sign => {
+    const ids = []
+    for (let i = 0; i <= rings; i++) {
+      const r = inner + (outer - inner) * i / rings, row = []
+      for (let j = 0; j <= steps; j++) {
+        const a = a0 + (a1 - a0) * j / steps
+        positions.push(Math.cos(a) * r, sign * height(r), Math.sin(a) * r)
+        // Juice vesicles: a faint, irregular grain of lighter and darker sacs.
+        const grain = 0.06 * Math.sin(i * 12.9898 + j * 78.233 + sign * 3.1) * Math.sin(i * 4.1 - j * 9.7)
+        const c = juice.clone().lerp(membrane, 0.1 + 0.45 * (i / rings) ** 3).offsetHSL(0, 0, grain)
+        colors.push(c.r, c.g, c.b)
+        row.push(positions.length / 3 - 1)
+      }
+      ids.push(row)
+    }
+    return ids
+  }
+  const top = grid(1), bottom = grid(-1)
+  const quad = (a, b, c, d) => indices.push(a, b, c, a, c, d)
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j < steps; j++) {
+      quad(top[i][j], top[i + 1][j], top[i + 1][j + 1], top[i][j + 1])
+      quad(bottom[i][j], bottom[i][j + 1], bottom[i + 1][j + 1], bottom[i + 1][j])
+    }
+  }
+  // Membranes: the two flat sides and the outer and inner rims.
+  for (let i = 0; i < rings; i++) {
+    quad(top[i][0], bottom[i][0], bottom[i + 1][0], top[i + 1][0])
+    quad(top[i][steps], top[i + 1][steps], bottom[i + 1][steps], bottom[i][steps])
+  }
+  for (let j = 0; j < steps; j++) {
+    quad(top[rings][j], bottom[rings][j], bottom[rings][j + 1], top[rings][j + 1])
+    quad(top[0][j], top[0][j + 1], bottom[0][j + 1], bottom[0][j])
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+// A citrus seed: plump, wedge-ovoid, one end pointed (the micropyle), with a
+// slight crease along one side.
+function seedShape() {
+  const g = new THREE.SphereGeometry(1, 16, 12), p = g.attributes.position, v = new THREE.Vector3()
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i)
+    const taper = v.y > 0 ? 1 - 0.45 * v.y * v.y : 1 - 0.08 * v.y * v.y
+    p.setXYZ(i, v.x * taper * (1 - 0.06 * Math.max(0, v.z)), v.y, v.z * taper)
+  }
+  g.computeVertexNormals()
+  return g
+}
+
+export function createAnatomy() {
+  const group = new THREE.Group()
+  group.name = 'orange-anatomy'
+  const body = new THREE.Group()
+  group.add(body)
+  const owned = new Set()
+  const own = x => { owned.add(x); return x }
+  const flavedoMaterial = own(addRindGlands(new THREE.MeshStandardMaterial({ color: 0xf08a12, roughness: 0.5, transparent: true })))
+  const pithMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf6efdc, roughness: 0.95, transparent: true }))
+  // One material per carpel: the unnamed ones and, later, the unchosen ones fade alone.
+  // Juice vesicles: long sacs fanning out from the axis, each catching light on
+  // its own, under a thin glossy membrane. Drawn in the carpel's own frame.
+  const vesicles = shader => {
+    shader.vertexShader = 'varying vec3 vLocal;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvLocal = position;')
+    shader.fragmentShader = 'varying vec3 vLocal;\nfloat vh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      // Long spindles converging on the axis, staggered along their length.
+      float rr = length(vLocal.xz), aa = atan(vLocal.z, vLocal.x) + 0.35 * vLocal.y;
+      float lane = aa * 150.0 + 1.6 * sin(rr * 21.0 + aa * 40.0);
+      float id = floor(lane / 6.2831853);
+      float along = 0.5 + 0.5 * sin(rr * 34.0 + id * 2.7);
+      float sac = pow(0.5 + 0.5 * sin(lane), 0.7) * (0.55 + 0.45 * along);
+      diffuseColor.rgb *= 0.86 + 0.16 * sac + 0.06 * (vh(vec2(id, floor(rr * 10.0))) - 0.5);
+      diffuseColor.rgb += 0.05 * pow(sac, 8.0) * vec3(1.0, 0.85, 0.5);`)
+  }
+  const carpelMaterials = Array.from({ length: CARPELS }, () => {
+    const m = own(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, clearcoat: 0.6, clearcoatRoughness: 0.25, transparent: true }))
+    m.onBeforeCompile = vesicles
+    return m
+  })
+  const seedMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf2e8cc, roughness: 0.7, transparent: true }))
+  const juice = new THREE.Color(0xf07f0c)
+
+  // Rind and pith: lunes that hinge open from the stylar (bottom) pole.
+  const shell = (radius, thickness, material) => Array.from({ length: LUNES }, (_, k) => {
+    // Half a lune of offset: a lune's middle, not a seam between two, faces the viewer.
+    const a0 = (k + 0.5) * Math.PI * 2 / LUNES, a1 = (k + 1.5) * Math.PI * 2 / LUNES
+    const pivot = new THREE.Group()
+    pivot.position.set(0, -radius, 0)
+    const mesh = new THREE.Mesh(own(luneGeometry(a0, a1, radius, thickness)), material)
+    mesh.position.set(0, radius, 0)
+    pivot.add(mesh)
+    body.add(pivot)
+    return { pivot, mesh, mid: (a0 + a1) / 2 }
+  })
+  const flavedo = shell(1, 0.05, flavedoMaterial)
+  const albedo = shell(0.95, 0.07, pithMaterial)
+  // A transparent piece must not hide what is behind it.
+  for (const m of [flavedoMaterial, pithMaterial]) m.side = THREE.DoubleSide
+
+  // Carpels: each wedge is two halves, so the chosen one can open on its seed.
+  const carpels = Array.from({ length: CARPELS }, (_, k) => {
+    const a0 = k * Math.PI * 2 / CARPELS + GAP, a1 = (k + 1) * Math.PI * 2 / CARPELS - GAP, mid = (a0 + a1) / 2
+    const holder = new THREE.Group()
+    body.add(holder)
+    const halves = [[a0, mid], [mid, a1]].map(([b0, b1], h) => {
+      const hinge = new THREE.Group()
+      // Each half hinges on the carpel's outer rim, along its middle.
+      hinge.position.set(Math.cos(mid) * 0.88, 0, Math.sin(mid) * 0.88)
+      const mesh = new THREE.Mesh(own(carpelHalfGeometry(b0, b1, 0.1, 0.88, juice)), carpelMaterials[k])
+      mesh.position.set(-Math.cos(mid) * 0.88, 0, -Math.sin(mid) * 0.88)
+      mesh.userData.carpel = k
+      hinge.add(mesh)
+      holder.add(hinge)
+      return { hinge, mesh, side: h ? 1 : -1 }
+    })
+    // ~1 cm in a ~7.5 cm fruit: about a quarter of the radius. Two per
+    // carpel, along its inner angle; the first is the one that leaves.
+    const seedGeometry = own(seedShape())
+    const seeds = [0.42, 0.62].map(r => {
+      const seed = new THREE.Mesh(seedGeometry, seedMaterial)
+      seed.scale.set(0.075, 0.13, 0.06)
+      seed.position.set(Math.cos(mid) * r, 0.05, Math.sin(mid) * r)
+      seed.rotation.set(0, -mid, Math.PI / 2)
+      seed.visible = false
+      holder.add(seed)
+      return seed
+    })
+    return { holder, halves, seed: seeds[0], seeds, mid }
+  })
+  const pickables = carpels.flatMap(c => c.halves.map(h => h.mesh))
+  const anchor = new THREE.Vector3(), released = new THREE.Vector3()
+  const X_AXIS = new THREE.Vector3(1, 0, 0), Y_AXIS = new THREE.Vector3(0, 1, 0), Z_AXIS = new THREE.Vector3(0, 0, 1)
+  const qLean = new THREE.Quaternion(), qSide = new THREE.Quaternion(), qGoal = new THREE.Quaternion()
+  const mid = new THREE.Vector3(), goal = new THREE.Vector3()
+
+  function setOpacity(material, value) {
+    material.opacity = value
+    material.transparent = value < 1
+    material.depthWrite = value > 0.98
+  }
+  // state: enter, peel, exit, turn, bare, fan, open, rel (0..1), chosen carpel,
+  // hovered carpel (or -1), and the project's ripe rind colour.
+  function update(state) {
+    flavedoMaterial.color.set(state.rind ?? 0xf08a12)
+    // The rind opens like a flower from the bottom pole, then leaves.
+    const peel = ease(state.peel), exit = ease(state.exit)
+    for (const lune of flavedo) {
+      lune.pivot.rotation.set(0, 0, 0)
+      lune.pivot.rotateOnAxis(new THREE.Vector3(Math.sin(lune.mid), 0, -Math.cos(lune.mid)), -peel * 1.05)
+      // Out sideways and back, away from the viewer and the labels.
+      // Up, out and back: the opened rind lifts away from the labels below.
+      lune.pivot.position.set(Math.cos(lune.mid) * exit * 4, -1 + exit * 1.6, Math.sin(lune.mid) * exit * 4 - exit * 2.5)
+      lune.pivot.visible = exit < 0.6
+    }
+    // Gone before the pieces can overlap as ghosts.
+    setOpacity(flavedoMaterial, 1 - Math.min(1, exit / 0.6))
+    // Turned to the cross-section, the white pith tears away in strips.
+    const bare = ease(state.bare)
+    for (const lune of albedo) {
+      lune.pivot.rotation.set(0, 0, 0)
+      lune.pivot.rotateOnAxis(new THREE.Vector3(Math.sin(lune.mid), 0, -Math.cos(lune.mid)), -bare * 1.4)
+      lune.pivot.position.set(Math.cos(lune.mid) * bare * 2.6, -0.95 - bare * 1.2, Math.sin(lune.mid) * bare * 2.6)
+      lune.pivot.visible = bare < 0.4
+    }
+    setOpacity(pithMaterial, 1 - Math.min(1, bare / 0.4))
+    // Side view to cross-section: the stem end turns toward the viewer.
+    body.rotation.set(ease(state.turn) * Math.PI / 2, 0, 0)
+    // The carpels leave the rosette for a row across the plate, as in the 2D
+    // piece: the named ones (one per idea of the project) each with its own
+    // delay, outer ones first; the unnamed sink away. The chosen one then
+    // comes forward, parts its halves on its seeds, and lets one go.
+    // Row coordinates are on screen (x right, y up) once the fruit has turned:
+    // local x is screen x and local -z is screen y.
+    const fan = state.fan, open = ease(state.open), rel = ease(state.rel)
+    const named = state.named ?? 5, step = state.step ?? 1.05
+    for (const [k, c] of carpels.entries()) {
+      let opacity = 1
+      c.holder.quaternion.identity()
+      c.holder.scale.setScalar(1)
+      c.holder.position.set(0, 0, 0)
+      for (const half of c.halves) half.hinge.rotation.set(0, 0, 0)
+      if (k < named) {
+        const kk = named > 1 ? (k - (named - 1) / 2) / ((named - 1) / 2) : 0
+        const lead = (1 - Math.abs(kk)) * 0.2
+        const fi = ease(Math.min(1, Math.max(0, (fan - lead * 0.5) / (1 - lead * 0.5))))
+        const chosen = k === state.chosen
+        // A loose segment stands on screen as it does on a plate: pole to pole
+        // upright, seen on its side membrane (a fat crescent, rim to one side),
+        // the outer ones leaning out. On screen that is Rz(lean)·Ry(mid - pi);
+        // the holder lives in the turned body, so undo the turn first.
+        let x = kk * step * (named - 1) / 2, y = 0.05 - Math.abs(kk) * 0.12, scale = 0.62, lean = -kk * 0.3
+        if (chosen) { x = T(x, 0, open); y = T(y, 0.15, open); scale = T(scale, 0.95, open); lean = T(lean, 0, open) }
+        else opacity = 1 - 0.75 * open
+        qLean.setFromAxisAngle(Z_AXIS, lean)
+        qSide.setFromAxisAngle(Y_AXIS, c.mid - Math.PI)
+        qGoal.setFromAxisAngle(X_AXIS, -Math.PI / 2).multiply(qLean).multiply(qSide)
+        c.holder.quaternion.slerp(qGoal, fi)
+        const sc = T(1, scale, fi)
+        c.holder.scale.setScalar(sc)
+        // Place the carpel's middle, not its tip (the holder's origin), at
+        // (x, y) on screen; in the body that is (x, depth, -y).
+        mid.set(Math.cos(c.mid) * 0.5, 0, Math.sin(c.mid) * 0.5)
+        goal.set(x, (k === state.hover ? 0.12 : 0) + (chosen ? 0.3 * open : 0), -y).multiplyScalar(fi).addScaledVector(mid, 1 - fi)
+        c.holder.position.copy(goal).sub(mid.multiplyScalar(sc).applyQuaternion(c.holder.quaternion))
+        // The chosen one opens like a book on its seeds: the half facing the
+        // viewer swings back on the rim.
+        if (chosen) c.halves[0].hinge.rotation.y = -open * 2.1
+        for (const seed of c.seeds) seed.visible = chosen && open > 0
+      } else {
+        const g = Math.min(1, fan * 2.4)
+        opacity = 1 - g
+        c.holder.scale.setScalar(1 - 0.4 * g)
+        c.holder.position.y = -0.8 * g
+        for (const seed of c.seeds) seed.visible = false
+      }
+      setOpacity(carpelMaterials[k], opacity)
+      c.holder.visible = opacity > 0.002
+      c.seed.rotation.set(0, -c.mid, Math.PI / 2)
+    }
+    const chosen = carpels[state.chosen]
+    if (chosen) {
+      chosen.seed.position.set(Math.cos(chosen.mid) * (0.42 + rel * 0.9), 0.05 + rel * 0.6, Math.sin(chosen.mid) * (0.42 + rel * 0.9))
+      chosen.seed.updateMatrixWorld()
+      released.setFromMatrixPosition(chosen.seed.matrixWorld)
+    }
+    setOpacity(seedMaterial, 1)
+    group.updateMatrixWorld(true)
+  }
+  // Where to pin a carpel's label: its outer rim, in world space.
+  function carpelAnchor(k, out = anchor) {
+    const c = carpels[k]
+    // Over the standing segment: its upper pole, halfway out.
+    return out.set(Math.cos(c.mid) * 0.45, 0.98, Math.sin(c.mid) * 0.45).applyMatrix4(c.holder.matrixWorld)
+  }
+  function seedWorld(out = released) { return out.copy(released) }
+  // Everything but the released seed fades as the seed leaves.
+  function setFade(value) {
+    for (const m of [...carpelMaterials, pithMaterial, flavedoMaterial]) setOpacity(m, Math.min(m.opacity, value))
+    for (const c of carpels) {
+      c.holder.visible = c.holder.visible && value > 0.001
+      c.seeds[1].visible = c.seeds[1].visible && value > 0.001
+    }
+    const chosen = carpels.find(c => c.seed.visible)
+    if (chosen) chosen.holder.visible = true
+  }
+  // Fly the released seed to a world position, upright like the next lap's seed.
+  const local = new THREE.Vector3(), q = new THREE.Quaternion(), from = new THREE.Vector3()
+  function placeSeed(k, world, t) {
+    const c = carpels[k]
+    if (!c) return
+    from.copy(released)
+    local.lerpVectors(from, world, t)
+    c.holder.worldToLocal(local)
+    c.seed.position.copy(local)
+    c.holder.getWorldQuaternion(q).invert()
+    c.seed.quaternion.slerp(q, t)
+    c.seed.visible = true
+    group.updateMatrixWorld(true)
+  }
+  function dispose() {
+    for (const x of owned) x.dispose()
+    owned.clear()
+    group.removeFromParent()
+  }
+  update({ enter: 0, peel: 0, exit: 0, turn: 0, bare: 0, fan: 0, open: 0, rel: 0, chosen: 0, hover: -1 })
+  return { group, update, carpelAnchor, seedWorld, setFade, placeSeed, pickables, dispose, CARPELS }
+}

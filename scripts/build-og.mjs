@@ -83,7 +83,7 @@ await page.evaluate(() => {
   /* Fuera la interfaz. La tarjeta es el dibujo más el título, nada más — y
      `#grain` se va también porque el ruido es lo peor que le puede pasar a un
      JPEG. */
-  for (const s of ['.band', '.label', '.nav', '.brand', '.cycle', '.hint', '.snd', '#grain'])
+  for (const s of ['.band', '.label', '.nav', '.brand', '.cycle', '.hint', '.snd', '#grain', '.engine3d-labels', '.tag'])
     document.querySelectorAll(s).forEach(el => (el.style.display = 'none'))
 
   const og = document.createElement('div')
